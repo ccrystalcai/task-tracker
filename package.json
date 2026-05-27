@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "homepage": "https://<your-username>.github.io/task-tracker",
+  "homepage": "https://ccrystalcai.github.io/task-tracker",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
