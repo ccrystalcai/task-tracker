@@ -20,7 +20,7 @@ const FIRST_COMPLETE = [
   '迈出第一步了，接下来的路会越来越顺 🛤️',
 ];
 
-const STREAK_MILESTONES: Record<number, string> = {
+export const STREAK_MILESTONES: Record<number, string> = {
   3: '连续打卡 3 天！习惯开始发芽了 🌱',
   7: '连续 7 天打卡！一周的坚持不容易 👏',
   14: '连续 14 天！这已经不是三分钟热度了 🔥',

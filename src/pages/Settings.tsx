@@ -9,9 +9,14 @@ import {
   requestAccessToken, fetchCalendars, createCalendarEvent,
 } from '@/utils/calendar';
 import type { ThemeName } from '@/styles/themes';
-import { Plus, Trash2, Edit3, Check, X, Download, Upload, Calendar, Link, Unlink, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash, PencilSimple, Check, X, Download, Upload, Calendar, Link, ArrowsClockwise, CaretDown, CaretRight, Cloud, CloudSlash, HardDrive } from '@phosphor-icons/react';
+import {
+  getStoredClientId, setStoredClientId, getStoredToken,
+  authorizeGoogleDrive, uploadToDrive, listBackups, disconnectDrive,
+} from '@/utils/googleDrive';
+import { getBackupSchedule, setBackupSchedule, markBackupDone, type BackupSchedule } from '@/utils/backupReminder';
 
-const TAG_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
+const TAG_COLORS = ['#0D9488', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
 
 interface TagTreeItemProps {
   node: import('@/stores/tagStore').TagNode;
@@ -39,34 +44,80 @@ function TagTreeItem({
   const isCollapsed = collapsedTags.has(node.id);
   const hasChildren = node.children.length > 0;
   const canHaveChildren = depth < 3;
+  const [showColorPicker, setShowColorPicker] = useState(false);
 
   return (
     <div>
       <div
         className={`flex items-center gap-2 px-3 py-2 rounded-btn hover:bg-surface-hover ${isEditing ? 'bg-surface-hover' : ''}`}
-        style={{ marginLeft: `${(depth - 1) * 20}px` }}
+        style={{
+          marginLeft: `${(depth - 1) * 24}px`,
+          borderLeft: depth > 1 ? '1px solid var(--color-border)' : 'none',
+          paddingLeft: depth > 1 ? '8px' : undefined,
+        }}
       >
         {hasChildren ? (
           <button onClick={() => onToggleCollapse(node.id)} className="p-0.5 text-text-secondary">
-            {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+            {isCollapsed ? <CaretRight size={14} /> : <CaretDown weight="bold" size={14} />}
           </button>
         ) : (
           <span className="w-5" />
         )}
         {isEditing ? (
           <>
-            <input className="input flex-1 text-caption" value={editName}
+            <input autoComplete="off" className="input flex-1 text-small" value={editName}
               onChange={(e) => onEditNameChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && onSaveEdit(node.id)} autoFocus />
-            <div className="flex gap-1">
-              {TAG_COLORS.slice(0, 5).map((c) => (
-                <button key={c} onClick={() => onEditColorChange(c)}
-                  className={`w-5 h-5 rounded-full ${editColor === c ? 'ring-1 ring-offset-1 ring-primary' : ''}`}
-                  style={{ backgroundColor: c }} />
-              ))}
+            {/* Color picker trigger */}
+            <div className="relative flex-shrink-0">
+              <button
+                type="button"
+                className="w-5 h-5 rounded-full ring-1 ring-offset-1 ring-primary cursor-pointer"
+                style={{ backgroundColor: editColor }}
+                onClick={() => setShowColorPicker(!showColorPicker)}
+                title="选择颜色"
+              />
+              {showColorPicker && (
+                <>
+                  <div className="fixed inset-0 z-10" role="presentation" onClick={() => setShowColorPicker(false)} />
+                  <div className="absolute top-full left-0 mt-2 z-20 bg-surface rounded-card p-3 shadow-card-lg border border-border w-48">
+                    <div className="flex gap-1.5 mb-2 flex-wrap">
+                      {TAG_COLORS.map((c) => (
+                        <button key={c}
+                          onClick={() => { onEditColorChange(c); setShowColorPicker(false); }}
+                          className={`w-8 h-8 rounded-full transition-transform hover:scale-110 ${editColor === c ? 'ring-1 ring-offset-1 ring-primary' : ''}`}
+                          style={{ backgroundColor: c }} />
+                      ))}
+                    </div>
+                    <div className="h-px bg-border mb-2" />
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="color"
+                        value={editColor}
+                        onChange={(e) => onEditColorChange(e.target.value)}
+                        className="w-8 h-8 rounded cursor-pointer border-0 p-0 flex-shrink-0"
+                      />
+                      <input
+                        className="input flex-1 text-caption px-2 py-1"
+                        placeholder="#6366F1"
+                        value={editColor}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v.startsWith('#') || v === '') onEditColorChange(v);
+                        }}
+                        onBlur={(e) => {
+                          if (!/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                            onEditColorChange('#6366F1');
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-            <button className="p-1 text-success" onClick={() => onSaveEdit(node.id)}><Check size={16} /></button>
-            <button className="p-1 text-text-secondary" onClick={onCancelEdit}><X size={16} /></button>
+            <button className="p-1 text-success flex-shrink-0" onClick={() => onSaveEdit(node.id)}><Check weight="bold" size={16} /></button>
+            <button className="p-1 text-text-secondary flex-shrink-0" onClick={onCancelEdit}><X weight="bold" size={16} /></button>
           </>
         ) : (
           <>
@@ -75,15 +126,15 @@ function TagTreeItem({
             {canHaveChildren && (
               <button className="p-1 text-text-secondary hover:text-primary"
                 onClick={() => onCreateChild(node.id)} title="添加子标签">
-                <Plus size={14} />
+                <Plus weight="bold" size={14} />
               </button>
             )}
             <button className="p-1 text-text-secondary hover:text-primary"
               onClick={() => onEdit({ id: node.id, name: node.name, color: node.color })}>
-              <Edit3 size={14} />
+              <PencilSimple weight="bold" size={14} />
             </button>
             <button className="p-1 text-text-secondary hover:text-danger" onClick={() => onDelete(node.id)}>
-              <Trash2 size={14} />
+              <Trash weight="bold" size={14} />
             </button>
           </>
         )}
@@ -172,11 +223,6 @@ export default function Settings() {
     });
   };
 
-  const handleSaveClientId = () => {
-    setClientId(googleClientId.trim());
-    setCalendarMsg({ type: 'success', text: 'Client ID 已保存，请点击「连接」授权' });
-  };
-
   const handleConnect = async () => {
     if (!googleClientId.trim()) {
       setCalendarMsg({ type: 'error', text: '请先输入 Google Client ID' });
@@ -253,7 +299,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="card">
         <h3 className="text-h3">设置</h3>
         <p className="text-caption text-text-secondary mt-1">个性化配置你的 TaskTracker</p>
@@ -268,18 +314,17 @@ export default function Settings() {
             <span className="text-small text-text-secondary">主色</span>
             <input
               type="color"
-              value={primaryColor || '#6366F1'}
+              value={primaryColor || '#0D9488'}
               onChange={(e) => setPrimaryColor(e.target.value)}
-              className="w-6 h-6 rounded-full cursor-pointer border-0 p-0"
+              className="w-8 h-8 rounded-full cursor-pointer border-2 border-border p-0 flex-shrink-0 appearance-none
+                [&::-webkit-color-swatch-wrapper]:p-0
+                [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-0
+                [&::-moz-color-swatch]:rounded-full [&::-moz-color-swatch]:border-0"
               title="自定义主色调"
-            />
-            <div
-              className="w-5 h-5 rounded-full"
-              style={{ backgroundColor: primaryColor || '#6366F1' }}
             />
             {primaryColor && (
               <button
-                className="text-small text-text-secondary hover:text-primary ml-1"
+                className="text-small text-text-secondary hover:text-primary"
                 onClick={() => setPrimaryColor(null)}
                 title="重置默认"
               >
@@ -288,12 +333,12 @@ export default function Settings() {
             )}
           </div>
         </div>
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {themes.map((t) => (
             <button
               key={t.name}
               onClick={() => setTheme(t.name as ThemeName)}
-              className={`flex flex-col items-center gap-2 p-4 rounded-card border-2 transition-all duration-150 ${
+              className={`flex flex-col items-center gap-2 p-4 rounded-card border-2 transition duration-150 ${
                 theme === t.name
                   ? 'border-primary bg-primary-light/10 shadow-card'
                   : 'border-border hover:border-primary-light hover:bg-surface-hover'
@@ -313,37 +358,53 @@ export default function Settings() {
         <p className="text-caption text-text-secondary mb-4">支持三级标签，用于分类和筛选任务</p>
 
         {/* Add new tag */}
-        <div className="flex items-center gap-2 mb-1">
-          <input className="input flex-1" placeholder="新标签名" value={newTagName}
-            onChange={(e) => setNewTagName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreateTag()} />
-          <select className="input w-32 text-caption" value={newTagParentId || ''}
-            onChange={(e) => setNewTagParentId(e.target.value || null)}>
-            <option value="">一级标签</option>
-            {tags.filter((t) => {
-              const depth = getTagDepth(t.id);
-              return depth <= 2;
-            }).map((t) => (
-              <option key={t.id} value={t.id}>
-                {'—'.repeat(getTagDepth(t.id))} {t.name}
-              </option>
-            ))}
-          </select>
-          <div className="flex gap-1">
-            {TAG_COLORS.slice(0, 5).map((c) => (
-              <button key={c} type="button" onClick={() => setNewTagColor(c)}
-                className={`w-6 h-6 rounded-full transition-transform ${newTagColor === c ? 'scale-110 ring-1 ring-offset-1 ring-primary' : ''}`}
-                style={{ backgroundColor: c }} />
-            ))}
+        <div className="flex flex-col md:flex-row md:items-center gap-2 mb-1">
+          {/* Name + parent */}
+          <div className="flex gap-2 flex-1">
+            <input autoComplete="off" className="input flex-1" placeholder="新标签名" value={newTagName}
+              onChange={(e) => setNewTagName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreateTag()} />
+            <select className="input w-32 text-caption flex-shrink-0" value={newTagParentId || ''}
+              onChange={(e) => setNewTagParentId(e.target.value || null)}>
+              <option value="">一级标签</option>
+              {tags.filter((t) => {
+                const depth = getTagDepth(t.id);
+                return depth <= 2;
+              }).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {'—'.repeat(getTagDepth(t.id))} {t.name}
+                </option>
+              ))}
+            </select>
           </div>
-          <button className="btn-primary" onClick={handleCreateTag}><Plus size={16} /></button>
+          {/* Color + create button */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <input
+                type="color"
+                value={newTagColor}
+                onChange={(e) => setNewTagColor(e.target.value)}
+                className="w-8 h-8 rounded-full cursor-pointer border-2 border-border p-0 flex-shrink-0 appearance-none
+                  [&::-webkit-color-swatch-wrapper]:p-0
+                  [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-0
+                  [&::-moz-color-swatch]:rounded-full [&::-moz-color-swatch]:border-0"
+              />
+            </div>
+            {newTagColor !== TAG_COLORS[0] && (
+              <button type="button" onClick={() => setNewTagColor(TAG_COLORS[0])}
+                className="text-caption text-text-secondary hover:text-primary">
+                重置
+              </button>
+            )}
+            <button className="btn-primary flex-shrink-0" onClick={handleCreateTag}><Plus weight="bold" size={16} /></button>
+          </div>
         </div>
         <p className="text-small text-text-secondary mb-3">
           选择父标签可创建子标签（最多三级）
         </p>
 
         {/* Tag tree */}
-        <div className="space-y-0.5">
+        <div className="space-y-1">
           {tags.length === 0 && <p className="text-caption text-text-secondary">暂无自定义标签</p>}
           {getTagTree().map((node) => (
             <TagTreeItem
@@ -370,99 +431,78 @@ export default function Settings() {
       {/* Reminder */}
       <div className="card">
         <h3 className="text-h3 mb-3">提醒设置</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-body text-text-primary">每日小结提醒</p>
-              <p className="text-caption text-text-secondary">每天到时间自动弹出完成一天小结窗口</p>
-            </div>
-            <input type="time" className="input" defaultValue="21:00"
-              onChange={(e) => localStorage.setItem('tasktracker-daily-reminder', e.target.value)} />
+        <div className="flex items-center gap-3 bg-surface-hover rounded-btn px-4 py-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-body">每日小结提醒</p>
+            <p className="text-caption text-text-secondary">每天到时自动弹出小结窗口</p>
           </div>
-          <p className="text-small text-text-secondary">
-            浏览器需要保持页面打开才能触发提醒；单任务提醒请在创建/编辑任务时单独设置
-          </p>
+          <input autoComplete="off" type="time" className="input w-28 flex-shrink-0" defaultValue="21:00"
+            onChange={(e) => localStorage.setItem('tasktracker-daily-reminder', e.target.value)} />
         </div>
+        <p className="text-caption text-text-secondary mt-2">
+          需保持页面打开；单任务提醒请在创建/编辑任务时设置
+        </p>
       </div>
 
-      {/* Google Calendar */}
+      {/* Google API 配置 + Calendar + Drive (合并卡片) */}
       <div className="card">
-        <h3 className="text-h3 mb-3 flex items-center gap-2">
-          <Calendar size={20} className="text-primary" />
-          Google Calendar 同步
-        </h3>
+        <h3 className="text-h3 mb-3">Google 服务</h3>
         <p className="text-caption text-text-secondary mb-4">
-          将任务同步到 Google Calendar，需要先创建 Google Cloud 项目并获取 OAuth Client ID
+          同一个 Client ID 可用于 Drive 备份和 Calendar 同步。在 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google Cloud Console</a> 创建 OAuth 2.0 Client ID
         </p>
+        <div className="flex gap-2 mb-5">
+          <input autoComplete="off" className="input flex-1 text-small" placeholder="输入 Google Client ID"
+            value={googleClientId} onChange={(e) => setGoogleClientId(e.target.value)} />
+          <button className="btn-secondary text-small" onClick={() => { setClientId(googleClientId.trim()); setStoredClientId(googleClientId.trim()); }}>保存</button>
+        </div>
 
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-border">
+          {/* Calendar column */}
           <div>
-            <label className="text-small font-medium mb-1 block">Google OAuth Client ID</label>
-            <div className="flex gap-2">
-              <input
-                className="input flex-1"
-                placeholder="输入你的 Google Client ID..."
-                value={googleClientId}
-                onChange={(e) => setGoogleClientId(e.target.value)}
-              />
-              <button className="btn-secondary" onClick={handleSaveClientId}>保存</button>
-            </div>
-            <p className="text-small text-text-secondary mt-1">
-              在 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google Cloud Console</a> 创建 OAuth 2.0 Client ID，并添加 http://localhost:5173 到授权的 JavaScript 来源
+            <h4 className="text-body font-medium mb-2 flex items-center gap-2">
+              <Calendar weight="duotone" size={18} className="text-primary" />
+              Google Calendar 同步
+            </h4>
+            <p className="text-caption text-text-secondary mb-3">
+              将任务同步到你的 Google Calendar
             </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {calendarConnected ? (
-              <button className="btn-secondary flex items-center gap-2" onClick={handleDisconnect}>
-                <Unlink size={16} />断开连接
-              </button>
-            ) : (
-              <button className="btn-primary flex items-center gap-2" onClick={handleConnect} disabled={calendarLoading}>
-                <Link size={16} />{calendarLoading ? '连接中...' : '连接 Google Calendar'}
-              </button>
-            )}
-            {calendarConnected && (
-              <span className="text-small text-success flex items-center gap-1">
-                <Check size={14} />已连接
+            <div className="flex items-center gap-3 mb-3">
+              <span className={`flex items-center gap-1.5 text-small ${calendarConnected ? 'text-success' : 'text-text-secondary'}`}>
+                {calendarConnected ? <><Check weight="bold" size={14} /> 已连接</> : <><Link weight="bold" size={14} /> 未连接</>}
               </span>
-            )}
-          </div>
+              {calendarConnected ? (
+                <button className="btn-secondary text-small" onClick={handleDisconnect}>断开</button>
+              ) : (
+                <button className="btn-primary text-small" onClick={handleConnect} disabled={calendarLoading || !googleClientId.trim()}>
+                  {calendarLoading ? '连接中…' : '连接 Google Calendar'}
+                </button>
+              )}
+            </div>
 
-          {calendarConnected && calendars.length > 0 && (
-            <>
-              <div>
-                <label className="text-small font-medium mb-1 block">同步到日历</label>
-                <select
-                  className="input w-full"
-                  value={selectedCalendar}
-                  onChange={(e) => setSelectedCalendar(e.target.value)}
-                >
+            {calendarConnected && calendars.length > 0 && (
+              <div className="space-y-3">
+                <select className="input w-full text-small" value={selectedCalendar} onChange={(e) => setSelectedCalendar(e.target.value)}>
                   {calendars.map((c) => (
                     <option key={c.id} value={c.id}>{c.summary}</option>
                   ))}
                 </select>
+                <div className="flex gap-2">
+                  <button className="btn-primary flex items-center gap-1.5 text-small" onClick={handleSyncToCalendar} disabled={calendarLoading}>
+                    <ArrowsClockwise weight="bold" size={14} className={calendarLoading ? 'animate-spin' : ''} />同步未来任务
+                  </button>
+                </div>
               </div>
+            )}
 
-              <button
-                className="btn-primary flex items-center gap-2"
-                onClick={handleSyncToCalendar}
-                disabled={calendarLoading}
-              >
-                <RefreshCw size={16} className={calendarLoading ? 'animate-spin' : ''} />
-                同步未来任务到日历
-              </button>
-              <p className="text-small text-text-secondary">
-                仅同步今天及未来的未完成任务（最多 20 个）
+            {calendarMsg && (
+              <p className={`text-caption mt-2 ${calendarMsg.type === 'success' ? 'text-success' : 'text-danger'}`}>
+                {calendarMsg.text}
               </p>
-            </>
-          )}
+            )}
+          </div>
 
-          {calendarMsg && (
-            <p className={`text-caption ${calendarMsg.type === 'success' ? 'text-success' : 'text-danger'}`}>
-              {calendarMsg.text}
-            </p>
-          )}
+          {/* Drive column */}
+          <DriveContent />
         </div>
       </div>
 
@@ -471,12 +511,12 @@ export default function Settings() {
         <h3 className="text-h3 mb-3">数据管理</h3>
         <div className="flex gap-3">
           <button className="btn-secondary flex items-center gap-2" onClick={handleExport}>
-            <Download size={16} />导出数据 (JSON)
+            <Download weight="bold" size={16} />导出数据 (JSON)
           </button>
           <button className="btn-secondary flex items-center gap-2" onClick={() => fileRef.current?.click()}>
-            <Upload size={16} />导入数据
+            <Upload weight="bold" size={16} />导入数据
           </button>
-          <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+          <input autoComplete="off" ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
         </div>
         <p className="text-small text-text-secondary mt-2">
           数据存储在浏览器本地，建议定期导出备份
@@ -489,6 +529,125 @@ export default function Settings() {
           TaskTracker v0.1.0 — 让每一天都离目标更近一步
         </p>
       </div>
+    </div>
+  );
+}
+
+function DriveContent() {
+  const [connected, setConnected] = useState(!!getStoredToken());
+  const [schedule, setSchedule] = useState<BackupSchedule>(getBackupSchedule());
+  const [backups, setBackups] = useState<Array<{ id: string; name: string; createdTime: string }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
+
+  const handleConnect = async () => {
+    try {
+      setStatusMsg('');
+      const cid = getStoredClientId();
+      if (!cid) { setStatusMsg('请先在 Google API 配置中保存 Client ID'); return; }
+      await authorizeGoogleDrive(cid);
+      setConnected(true);
+      setStatusMsg('已连接 Google Drive');
+    } catch (e) {
+      setStatusMsg(`连接失败: ${(e as Error).message}`);
+    }
+  };
+
+  const handleDisconnect = () => {
+    disconnectDrive();
+    setConnected(false);
+    setBackups([]);
+    setStatusMsg('已断开连接');
+  };
+
+  const handleBackup = async () => {
+    setUploading(true);
+    setStatusMsg('');
+    try {
+      const token = getStoredToken();
+      if (!token) throw new Error('未连接');
+      const { exportAllData } = await import('@/utils/export');
+      const data = await exportAllData();
+      const fileName = `tasktracker-backup-${new Date().toISOString().split('T')[0]}.json`;
+      await uploadToDrive(fileName, data, token);
+      setStatusMsg('备份成功！');
+      markBackupDone();
+    } catch (e) {
+      setStatusMsg(`备份失败: ${(e as Error).message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleListBackups = async () => {
+    try {
+      const token = getStoredToken();
+      if (!token) throw new Error('未连接');
+      const list = await listBackups(token);
+      setBackups(list);
+    } catch (e) {
+      setStatusMsg(`查询失败: ${(e as Error).message}`);
+    }
+  };
+
+  return (
+    <div>
+      <h4 className="text-body font-medium mb-2 flex items-center gap-2">
+        <Cloud weight="duotone" size={18} className="text-primary" />
+        Google Drive 云备份
+      </h4>
+      <p className="text-caption text-text-secondary mb-3">
+        将数据备份到你的 Google Drive
+      </p>
+      {connected ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-small text-success flex items-center gap-1 flex-shrink-0">
+            <Check weight="bold" size={14} />已连接
+          </span>
+          <select
+            className="input text-small w-20"
+            value={schedule}
+            onChange={(e) => {
+              const v = e.target.value as BackupSchedule;
+              setSchedule(v);
+              setBackupSchedule(v);
+            }}
+          >
+            <option value="manual">手动</option>
+            <option value="daily">每天</option>
+            <option value="weekly">每周</option>
+          </select>
+          <button className="btn-secondary flex items-center gap-1.5 text-small" onClick={handleBackup} disabled={uploading}>
+            <HardDrive weight="bold" size={14} />{uploading ? '上传中...' : '备份'}
+          </button>
+          <button className="btn-secondary flex items-center gap-1.5 text-small" onClick={handleListBackups}>
+            <ArrowsClockwise weight="bold" size={14} />查看
+          </button>
+          <button className="btn-secondary text-small" onClick={handleDisconnect}>断开</button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <span className="text-small text-text-secondary flex items-center gap-1.5">
+            <CloudSlash weight="duotone" size={14} />未连接
+          </span>
+          <button className="btn-primary text-small" onClick={handleConnect} disabled={!getStoredClientId()}>连接 Google Drive</button>
+        </div>
+      )}
+      {connected && backups.length > 0 && (
+        <div className="bg-surface-hover rounded-btn p-2 max-h-[160px] overflow-y-auto space-y-0.5 mt-2">
+          {backups.map((b) => (
+            <div key={b.id} className="flex items-center justify-between text-small px-2 py-1">
+              <span className="truncate">{b.name}</span>
+              <span className="text-text-secondary flex-shrink-0 ml-2">{b.createdTime?.substring(0, 10)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {statusMsg && (
+        <p className={`text-small mt-2 ${statusMsg.includes('失败') || statusMsg.includes('错') ? 'text-danger' : 'text-success'}`}>
+          {statusMsg}
+        </p>
+      )}
     </div>
   );
 }

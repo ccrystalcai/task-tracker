@@ -4,29 +4,32 @@ import { db } from '@/db';
 import { generateId } from '@/utils/id';
 import type { Task, Mood } from '@/db/schema';
 import Modal from '@/components/ui/Modal';
-import { Star, CheckCircle2, Clock, SkipForward, ImagePlus, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Star, CheckCircle, Clock, SkipForward, CameraPlus, X, CaretDown, CaretUp, Confetti } from '@phosphor-icons/react';
+import type { AppIcon } from '@/constants/moods';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import type { DailySummary } from '@/db/schema';
+import { MOOD_ICON, MOOD_LABEL, WEATHER_ICON, WEATHER_LABEL } from '@/constants/moods';
+import type { Weather } from '@/constants/moods';
 
 const DRAFT_KEY = 'tasktracker-day-summary-draft';
 
 const today = new Date().toISOString().split('T')[0];
-const MOODS: { value: Mood; emoji: string; label: string }[] = [
-  { value: 'great', emoji: '😄', label: '很棒' },
-  { value: 'good', emoji: '😊', label: '不错' },
-  { value: 'okay', emoji: '😐', label: '一般' },
-  { value: 'bad', emoji: '😔', label: '不太好' },
-  { value: 'terrible', emoji: '😫', label: '很差' },
+const MOODS: { value: Mood; icon: AppIcon; label: string }[] = [
+  { value: 'great', icon: MOOD_ICON.great, label: MOOD_LABEL.great },
+  { value: 'good', icon: MOOD_ICON.good, label: MOOD_LABEL.good },
+  { value: 'okay', icon: MOOD_ICON.okay, label: MOOD_LABEL.okay },
+  { value: 'bad', icon: MOOD_ICON.bad, label: MOOD_LABEL.bad },
+  { value: 'terrible', icon: MOOD_ICON.terrible, label: MOOD_LABEL.terrible },
 ];
 
-const WEATHERS: { value: 'sunny' | 'cloudy' | 'rainy' | 'stormy' | 'snowy' | 'windy'; emoji: string; label: string }[] = [
-  { value: 'sunny', emoji: '☀️', label: '晴' },
-  { value: 'cloudy', emoji: '⛅', label: '多云' },
-  { value: 'rainy', emoji: '🌧', label: '雨' },
-  { value: 'stormy', emoji: '⛈', label: '暴风雨' },
-  { value: 'snowy', emoji: '❄️', label: '雪' },
-  { value: 'windy', emoji: '💨', label: '风' },
+const WEATHERS: { value: Weather; icon: AppIcon; label: string }[] = [
+  { value: 'sunny', icon: WEATHER_ICON.sunny, label: WEATHER_LABEL.sunny },
+  { value: 'cloudy', icon: WEATHER_ICON.cloudy, label: WEATHER_LABEL.cloudy },
+  { value: 'rainy', icon: WEATHER_ICON.rainy, label: WEATHER_LABEL.rainy },
+  { value: 'stormy', icon: WEATHER_ICON.stormy, label: WEATHER_LABEL.stormy },
+  { value: 'snowy', icon: WEATHER_ICON.snowy, label: WEATHER_LABEL.snowy },
+  { value: 'windy', icon: WEATHER_ICON.windy, label: WEATHER_LABEL.windy },
 ];
 
 interface DaySummaryModalProps {
@@ -203,6 +206,7 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
         summary: summary || '',
         suggestions,
         images,
+        tags: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -220,7 +224,7 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
     return (
       <Modal open={open} onClose={onClose} title="今日小结已保存">
         <div className="text-center py-6 space-y-3">
-          <p className="text-4xl">🎉</p>
+          <Confetti weight="duotone" size={40} className="mx-auto text-primary" />
           <p className="text-h3 text-success">今天辛苦啦！</p>
           <p className="text-body text-text-secondary">
             完成了 {completedTasks.length}/{todayTasks.length} 个任务，累计投入 {formatTime(totalActual)}
@@ -239,7 +243,7 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
 
   return (
     <Modal open={open} onClose={onClose} title={`完成一天 — ${format(new Date(), 'M月d日 EEEE', { locale: zhCN })}`}>
-      <div className="space-y-6 max-h-[70vh] overflow-y-auto">
+      <div className="space-y-5 max-h-[70vh] overflow-y-auto">
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 text-center">
           <div className="bg-surface-hover rounded-card p-3">
@@ -263,16 +267,16 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
               className="flex items-center gap-2 w-full text-left mb-3"
               onClick={() => setExpandedCompleted(!expandedCompleted)}
             >
-              {expandedCompleted ? <ChevronDown size={16} className="text-text-secondary" /> : <ChevronUp size={16} className="text-text-secondary" />}
+              {expandedCompleted ? <CaretDown weight="bold" size={16} className="text-text-secondary" /> : <CaretUp weight="bold" size={16} className="text-text-secondary" />}
               <h4 className="text-h3">已完成任务 — 打分与反思 ({completedTasks.length})</h4>
             </button>
             {expandedCompleted && <div className="space-y-3">
               {completedTasks.map((task) => (
                 <div key={task.id} className="border border-border rounded-card p-3">
                   <p className="text-body font-medium flex items-center gap-2">
-                    <CheckCircle2 size={16} className="text-success" />
-                    {task.title}
-                    <span className="text-small text-text-secondary font-normal">
+                    <CheckCircle weight="duotone" size={16} className="text-success" />
+                    <span className="truncate min-w-0">{task.title}</span>
+                    <span className="text-small text-text-secondary font-normal flex-shrink-0">
                       {task.actualMinutes > 0 ? `实际 ${task.actualMinutes}min` : `预估 ${task.estimatedMinutes}min`}
                     </span>
                   </p>
@@ -281,13 +285,13 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button key={star} onClick={() => setTaskScores({ ...taskScores, [task.id]: star })}
                         className="transition-transform hover:scale-110">
-                        <Star size={18}
+                        <Star weight="duotone" size={18}
                           fill={star <= (taskScores[task.id] ?? 0) ? '#F59E0B' : 'none'}
                           color={star <= (taskScores[task.id] ?? 0) ? '#F59E0B' : '#CBD5E1'} />
                       </button>
                     ))}
                   </div>
-                  <textarea className="input w-full mt-2 resize-none text-caption" rows={2}
+                  <textarea autoComplete="off" className="input w-full mt-2 resize-none text-caption" rows={2}
                     placeholder="写一句反思：哪里做得好？哪里可以改进？"
                     value={taskReflections[task.id] ?? ''}
                     onChange={(e) => setTaskReflections({ ...taskReflections, [task.id]: e.target.value })} />
@@ -305,17 +309,17 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
               className="flex items-center gap-2 w-full text-left mb-3"
               onClick={() => setExpandedPending(!expandedPending)}
             >
-              {expandedPending ? <ChevronDown size={16} className="text-text-secondary" /> : <ChevronUp size={16} className="text-text-secondary" />}
+              {expandedPending ? <CaretDown weight="bold" size={16} className="text-text-secondary" /> : <CaretUp weight="bold" size={16} className="text-text-secondary" />}
               <h4 className="text-h3">未完成任务 — 记录原因 ({pendingTasks.length})</h4>
             </button>
             {expandedPending && <div className="space-y-3">
               {pendingTasks.map((task) => (
                 <div key={task.id} className="border border-border rounded-card p-3">
                   <p className="text-body font-medium flex items-center gap-2">
-                    <SkipForward size={16} className="text-warning" />
-                    {task.title}
-                    <span className="text-small text-text-secondary font-normal">
-                      <Clock size={12} className="inline mr-0.5" />{task.estimatedMinutes}min
+                    <SkipForward weight="bold" size={16} className="text-warning" />
+                    <span className="truncate min-w-0">{task.title}</span>
+                    <span className="text-small text-text-secondary font-normal flex-shrink-0">
+                      <Clock weight="bold" size={12} className="inline mr-0.5" />{task.estimatedMinutes}min
                     </span>
                   </p>
                   <div className="flex items-center gap-2 mt-2">
@@ -345,7 +349,7 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
                     <textarea
                       className="input w-full mt-2 resize-none text-caption"
                       rows={1}
-                      placeholder="补充说明..."
+                      placeholder="补充说明…"
                       value={taskSkipReasons[task.id]?.startsWith('其他：') ? taskSkipReasons[task.id].replace('其他：', '') : taskSkipReasons[task.id] || ''}
                       onChange={(e) => setTaskSkipReasons({ ...taskSkipReasons, [task.id]: `其他：${e.target.value}` })}
                     />
@@ -363,10 +367,10 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
           <div className="flex gap-2">
             {MOODS.map((m) => (
               <button key={m.value} onClick={() => setMood(m.value)}
-                className={`flex flex-col items-center gap-1 p-3 rounded-card border-2 transition-all ${
+                className={`flex flex-col items-center gap-1 p-3 rounded-card border-2 transition ${
                   mood === m.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary-light'
                 }`}>
-                <span className="text-2xl">{m.emoji}</span>
+                <m.icon size={28} weight="duotone" />
                 <span className="text-small text-text-secondary">{m.label}</span>
               </button>
             ))}
@@ -379,10 +383,10 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
           <div className="flex gap-2 flex-wrap">
             {WEATHERS.map((w) => (
               <button key={w.value} onClick={() => setWeather(weather === w.value ? null : w.value)}
-                className={`flex flex-col items-center gap-1 p-3 rounded-card border-2 transition-all ${
+                className={`flex flex-col items-center gap-1 p-3 rounded-card border-2 transition ${
                   weather === w.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary-light'
                 }`}>
-                <span className="text-2xl">{w.emoji}</span>
+                <w.icon size={28} weight="duotone" />
                 <span className="text-small text-text-secondary">{w.label}</span>
               </button>
             ))}
@@ -404,7 +408,7 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
                     <img
                       src={img.url}
                       alt={img.title}
-                      className={`w-16 h-16 object-cover rounded-lg cursor-pointer border-2 transition-all ${
+                      className={`w-16 h-16 object-cover rounded-lg cursor-pointer border-2 transition ${
                         images.includes(img.url) ? 'border-primary opacity-100' : 'border-transparent opacity-50 hover:opacity-80'
                       }`}
                       onClick={() => {
@@ -425,9 +429,9 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
           )}
           {/* Upload */}
           <label className="inline-flex items-center gap-2 px-4 py-2 rounded-btn bg-surface-hover hover:bg-border cursor-pointer transition-colors text-body">
-            <ImagePlus size={18} />
+            <CameraPlus weight="bold" size={18} />
             添加照片
-            <input type="file" accept="image/*" multiple className="hidden"
+            <input autoComplete="off" type="file" accept="image/*" multiple className="hidden"
               onChange={async (e) => {
                 const files = e.target.files;
                 if (!files) return;
@@ -445,12 +449,12 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
             <div className="flex gap-2 mt-2 flex-wrap">
               {images.map((url, i) => (
                 <div key={i} className="relative">
-                  <img src={url} className="w-16 h-16 object-cover rounded-lg" />
+                  <img src={url} alt={`附件图片 ${i + 1}`} className="w-16 h-16 object-cover rounded-lg" />
                   <button
                     onClick={() => setImages(images.filter((_, j) => j !== i))}
                     className="absolute -top-1 -right-1 p-0.5 bg-black/50 text-white rounded-full"
                   >
-                    <X size={12} />
+                    <X weight="bold" size={12} />
                   </button>
                 </div>
               ))}
@@ -461,7 +465,7 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
         {/* Overall summary */}
         <div>
           <h4 className="text-h3 mb-2">今日小结</h4>
-          <textarea className="input w-full resize-none" rows={5}
+          <textarea autoComplete="off" className="input w-full resize-none" rows={5}
             placeholder="写写今天的感受、收获或者想记住的事情...&#10;&#10;提到具体任务名称会自动关联到对应任务的反思"
             value={summary}
             onChange={(e) => setSummary(e.target.value)} />
@@ -471,7 +475,7 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
         <div className="flex justify-end gap-3 pt-2 border-t border-border">
           <button className="btn-secondary" onClick={() => { saveDraft(); onClose(); }}>稍后再写</button>
           <button className="btn-primary" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? '保存中...' : '完成一天'}
+            {submitting ? '保存中…' : '完成一天'}
           </button>
         </div>
       </div>

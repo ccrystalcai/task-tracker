@@ -7,7 +7,7 @@ interface GoalFormProps {
   onCancel: () => void;
 }
 
-const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
+const COLORS = ['#0D9488', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
 
 export default function GoalForm({ initial, onSubmit, onCancel }: GoalFormProps) {
   const [name, setName] = useState(initial?.name ?? '');
@@ -29,15 +29,15 @@ export default function GoalForm({ initial, onSubmit, onCancel }: GoalFormProps)
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="text-caption text-text-secondary block mb-1">目标名称</label>
-        <input className="input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：3个月学会编程" required autoFocus />
+        <input autoComplete="off" className="input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：3个月学会编程" required autoFocus />
       </div>
       <div>
         <label className="text-caption text-text-secondary block mb-1">描述（可选）</label>
-        <textarea className="input w-full resize-none" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="简单描述一下这个目标" />
+        <textarea autoComplete="off" className="input w-full resize-none" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="简单描述一下这个目标" />
       </div>
       <div>
         <label className="text-caption text-text-secondary block mb-1">截止日期</label>
-        <input className="input w-full" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} required />
+        <input autoComplete="off" className="input w-full" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} required />
       </div>
       <div>
         <label className="text-caption text-text-secondary block mb-2">标签颜色</label>

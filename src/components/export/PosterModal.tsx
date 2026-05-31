@@ -2,7 +2,7 @@ import { useState, useRef, useMemo } from 'react';
 import { useTaskStore } from '@/stores/taskStore';
 import html2canvas from 'html2canvas';
 import Modal from '@/components/ui/Modal';
-import { Download, LayoutGrid, Images, Album } from 'lucide-react';
+import { Download, SquaresFour, Images, ImageSquare, CheckCircle, SkipForward, Square } from '@phosphor-icons/react';
 import { format, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -59,7 +59,7 @@ export default function PosterModal({ open, onClose, date: propDate }: PosterMod
       useCORS: true,
     });
     const link = document.createElement('a');
-    link.download = `TaskTracker-${date}.png`;
+    link.download = `via 小懒同学-${date}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
   };
@@ -74,18 +74,18 @@ export default function PosterModal({ open, onClose, date: propDate }: PosterMod
           <p className="text-caption text-text-secondary mb-2">布局模式</p>
           <div className="flex gap-2">
             {([
-              { value: 'polaroid' as LayoutMode, label: '拍立得', icon: Album },
-              { value: 'grid9' as LayoutMode, label: '九宫格', icon: LayoutGrid },
+              { value: 'polaroid' as LayoutMode, label: '拍立得', icon: ImageSquare },
+              { value: 'grid9' as LayoutMode, label: '九宫格', icon: SquaresFour },
               { value: 'collage' as LayoutMode, label: '拼贴', icon: Images },
             ]).map((m) => (
               <button
                 key={m.value}
                 onClick={() => setLayout(m.value)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-small transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-small transition ${
                   layout === m.value ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'
                 }`}
               >
-                <m.icon size={14} />
+                <m.icon size={14} weight="duotone" />
                 {m.label}
               </button>
             ))}
@@ -100,7 +100,7 @@ export default function PosterModal({ open, onClose, date: propDate }: PosterMod
               <button
                 key={c}
                 onClick={() => setBgColor(c)}
-                className={`w-7 h-7 rounded-full border-2 transition-all ${
+                className={`w-7 h-7 rounded-full border-2 transition ${
                   bgColor === c ? 'border-primary scale-110 ring-1 ring-primary' : 'border-transparent'
                 }`}
                 style={{ backgroundColor: c }}
@@ -120,7 +120,7 @@ export default function PosterModal({ open, onClose, date: propDate }: PosterMod
                   <div key={i} className="relative">
                     <img
                       src={url}
-                      className={`w-14 h-14 object-cover rounded-lg cursor-pointer border-2 transition-all ${
+                      className={`w-14 h-14 object-cover rounded-lg cursor-pointer border-2 transition ${
                         isSelected ? 'border-primary opacity-100' : 'border-transparent opacity-40 hover:opacity-70'
                       }`}
                       onClick={() => {
@@ -253,7 +253,7 @@ export default function PosterModal({ open, onClose, date: propDate }: PosterMod
                 {dateTasks.slice(0, 5).map((t) => (
                   <div key={t.id} className="flex items-center gap-1.5 mb-1">
                     <span className="text-sm">
-                      {t.status === 'completed' ? '✅' : t.status === 'skipped' ? '⏭️' : '⬜'}
+                      {t.status === 'completed' ? <CheckCircle weight="duotone" size={14} className="text-success inline" /> : t.status === 'skipped' ? <SkipForward weight="bold" size={14} className="text-warning inline" /> : <Square weight="duotone" size={14} className="inline" />}
                     </span>
                     <span className={`text-sm truncate ${t.status === 'completed' ? 'line-through opacity-50' : ''} ${isDark ? 'text-white/70' : 'text-text-secondary'}`}>
                       {t.title}
@@ -266,7 +266,7 @@ export default function PosterModal({ open, onClose, date: propDate }: PosterMod
             {/* Footer */}
             <div className="px-5 pb-4 pt-2">
               <p className={isDark ? 'text-white/20' : 'text-text-secondary'} style={{ fontSize: '10px', textAlign: 'center' }}>
-                TaskTracker
+                via 小懒同学
               </p>
             </div>
           </div>
@@ -275,7 +275,7 @@ export default function PosterModal({ open, onClose, date: propDate }: PosterMod
         <div className="flex justify-end gap-3 pt-2 border-t border-border">
           <button className="btn-secondary" onClick={onClose}>关闭</button>
           <button className="btn-primary flex items-center gap-2" onClick={handleExport}>
-            <Download size={16} />
+            <Download weight="bold" size={16} />
             下载海报
           </button>
         </div>

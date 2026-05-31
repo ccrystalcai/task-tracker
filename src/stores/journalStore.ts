@@ -19,6 +19,7 @@ interface JournalStore {
     summary?: string;
     suggestions: string[];
     images?: string[];
+    tags?: string[];
   }) => Promise<void>;
   deleteEntry: (id: string) => Promise<void>;
 }
@@ -50,6 +51,7 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
         summary: data.summary ?? existing.summary ?? '',
         suggestions: data.suggestions,
         images: data.images ?? existing.images ?? [],
+        tags: data.tags ?? existing.tags ?? [],
         updatedAt: new Date(),
       });
     } else {
@@ -62,6 +64,7 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
         summary: data.summary ?? '',
         suggestions: data.suggestions,
         images: data.images ?? [],
+        tags: data.tags ?? [],
         createdAt: new Date(),
         updatedAt: new Date(),
       });

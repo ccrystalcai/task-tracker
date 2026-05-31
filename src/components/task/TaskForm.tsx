@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useTagStore } from '@/stores/tagStore';
 import { useGoalStore } from '@/stores/goalStore';
 import type { Task, Priority, Tag, RecurrenceType } from '@/db/schema';
+import { PRIORITY_LABEL } from '@/constants/priorities';
+import { loadTaskPrefs } from '@/utils/taskPrefs';
 
 interface TaskFormProps {
   initial?: Partial<Task>;
@@ -27,10 +29,10 @@ interface TaskFormProps {
 }
 
 const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
-  { value: 'urgent-important', label: '紧急重要' },
-  { value: 'urgent-not-important', label: '紧急不重要' },
-  { value: 'not-urgent-important', label: '不紧急重要' },
-  { value: 'not-urgent-not-important', label: '不紧急不重要' },
+  { value: 'urgent-important', label: PRIORITY_LABEL['urgent-important'] },
+  { value: 'urgent-not-important', label: PRIORITY_LABEL['urgent-not-important'] },
+  { value: 'not-urgent-important', label: PRIORITY_LABEL['not-urgent-important'] },
+  { value: 'not-urgent-not-important', label: PRIORITY_LABEL['not-urgent-not-important'] },
 ];
 
 const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
@@ -43,15 +45,16 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
 export default function TaskForm({ initial, goalId, tags: allTags, priority: priorityProp, onSubmit, onCancel }: TaskFormProps) {
   const { getTagTree } = useTagStore();
   const { goals } = useGoalStore();
+  const prefs = initial ? null : loadTaskPrefs();
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
-  const [estimatedMinutes, setEstimatedMinutes] = useState(initial?.estimatedMinutes ?? 30);
+  const [estimatedMinutes, setEstimatedMinutes] = useState(initial?.estimatedMinutes ?? prefs?.estimatedMinutes ?? 30);
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? new Date().toISOString().split('T')[0]);
   const [dueTime, setDueTime] = useState(initial?.dueTime ?? '');
   const [reminderEnabled, setReminderEnabled] = useState(initial?.reminderEnabled ?? false);
   const [reminderTime, setReminderTime] = useState(initial?.reminderTime ?? '09:00');
-  const [priority, setPriority] = useState<Priority>(priorityProp ?? initial?.priority ?? 'not-urgent-important');
-  const [selectedTags, setSelectedTags] = useState<string[]>(initial?.tags ?? []);
+  const [priority, setPriority] = useState<Priority>(priorityProp ?? initial?.priority ?? prefs?.priority ?? 'not-urgent-important');
+  const [selectedTags, setSelectedTags] = useState<string[]>(initial?.tags ?? prefs?.tags ?? []);
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(initial?.recurrenceType ?? 'none');
   const [recurrenceInterval, setRecurrenceInterval] = useState(initial?.recurrenceInterval ?? 1);
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(initial?.recurrenceEndDate ?? '');
@@ -103,7 +106,7 @@ export default function TaskForm({ initial, goalId, tags: allTags, priority: pri
       {/* 1. Task name */}
       <div>
         <label className="text-small text-text-secondary block mb-1 font-medium">任务名称</label>
-        <input className="input w-full" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="要做什么？" required autoFocus />
+        <input autoComplete="off" className="input w-full" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="要做什么？" required autoFocus />
       </div>
 
       {/* 2. Goal */}
@@ -123,11 +126,11 @@ export default function TaskForm({ initial, goalId, tags: allTags, priority: pri
       {/* 3. Date + Time + Estimated */}
       <div>
         <label className="text-small text-text-secondary block mb-1 font-medium">时间安排</label>
-        <div className="grid grid-cols-3 gap-2">
-          <input className="input text-small" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required title="日期" />
-          <input className="input text-small" type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} title="时间（可选）" placeholder="时间" />
-          <div className="flex items-center gap-1">
-            <input className="input text-small flex-1" type="number" min={5} step={5} value={estimatedMinutes} onChange={(e) => setEstimatedMinutes(Number(e.target.value))} title="预估分钟" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <input autoComplete="off" className="input text-small" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required title="日期" />
+          <input autoComplete="off" className="input text-small" type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} title="时间（可选）" placeholder="时间" />
+          <div className="flex items-center gap-1 sm:col-span-1 col-span-2">
+            <input autoComplete="off" className="input text-small flex-1" type="number" min={5} step={5} value={estimatedMinutes} onChange={(e) => setEstimatedMinutes(Number(e.target.value))} title="预估分钟" />
             <span className="text-small text-text-secondary flex-shrink-0">分钟</span>
           </div>
         </div>
@@ -153,13 +156,13 @@ export default function TaskForm({ initial, goalId, tags: allTags, priority: pri
               ))}
             </select>
             {recurrenceType !== 'none' && (
-              <input className="input w-14 text-center" type="number" min={1} max={99}
+              <input autoComplete="off" className="input w-14 text-center" type="number" min={1} max={99}
                 value={recurrenceInterval}
                 onChange={(e) => setRecurrenceInterval(Number(e.target.value))} />
             )}
           </div>
           {recurrenceType !== 'none' && (
-            <input className="input w-full mt-1 text-small" type="date" value={recurrenceEndDate}
+            <input autoComplete="off" className="input w-full mt-1 text-small" type="date" value={recurrenceEndDate}
               onChange={(e) => setRecurrenceEndDate(e.target.value)} placeholder="结束日期（可选）" />
           )}
         </div>
@@ -175,7 +178,7 @@ export default function TaskForm({ initial, goalId, tags: allTags, priority: pri
                 key={tag.id}
                 type="button"
                 onClick={() => toggleTag(tag.id)}
-                className={`text-small px-2.5 py-1 rounded-full transition-all ${
+                className={`text-small px-2.5 py-1 rounded-full transition ${
                   selectedTags.includes(tag.id)
                     ? 'text-white shadow-sm'
                     : 'bg-surface-hover text-text-secondary hover:bg-border'
@@ -198,18 +201,18 @@ export default function TaskForm({ initial, goalId, tags: allTags, priority: pri
       {/* 6. Description */}
       <div>
         <label className="text-small text-text-secondary block mb-1 font-medium">备注</label>
-        <textarea className="input w-full resize-none" rows={2} value={description}
-          onChange={(e) => setDescription(e.target.value)} placeholder="补充说明..." />
+        <textarea autoComplete="off" className="input w-full resize-none" rows={2} value={description}
+          onChange={(e) => setDescription(e.target.value)} placeholder="补充说明…" />
       </div>
 
       {/* 7. Reminder */}
       <div className="flex items-center gap-3 bg-surface-hover rounded-btn px-3 py-2">
         <label className="flex items-center gap-1.5 cursor-pointer text-small">
-          <input type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} className="rounded" />
+          <input autoComplete="off" type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} className="rounded" />
           <span className="font-medium">设置提醒</span>
         </label>
         {reminderEnabled && (
-          <input className="input text-small" type="time" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
+          <input autoComplete="off" className="input text-small w-28" type="time" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
         )}
       </div>
 

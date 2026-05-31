@@ -48,7 +48,7 @@ export interface Task {
   notes: string;
   sourceTaskId: string | null;
   images: string[];
-  status: 'pending' | 'completed' | 'skipped';
+  status: 'pending' | 'in-progress' | 'completed' | 'skipped';
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -85,6 +85,7 @@ export interface JournalEntry {
   summary: string;
   suggestions: string[];
   images: string[];
+  tags: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -99,4 +100,34 @@ export interface DailySummary {
   summary: string;
   images: string[];
   createdAt: Date;
+}
+
+export interface GoalTemplate {
+  id: string;
+  name: string;
+  description: string;
+  data: {
+    goal: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>;
+    tags: Omit<Tag, 'id' | 'createdAt'>[];
+    tasks: Omit<Task, 'id' | 'goalId' | 'createdAt' | 'updatedAt'>[];
+  };
+  isBuiltIn: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Clip {
+  id: string;
+  url: string;
+  title: string;
+  summary: string;
+  content: string;
+  favicon: string;
+  image: string;
+  tags: string[];
+  notes: string;
+  relatedJournalDate: string | null;
+  convertedTaskId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }

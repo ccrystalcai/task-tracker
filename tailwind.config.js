@@ -14,6 +14,7 @@ export default {
         'surface-hover': 'var(--color-surface-hover)',
         'text-primary': 'var(--color-text-primary)',
         'text-secondary': 'var(--color-text-secondary)',
+        cta: 'var(--color-cta)',
         border: 'var(--color-border)',
       },
       borderRadius: {
@@ -27,6 +28,9 @@ export default {
         'card-lg': '0 4px 6px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.08)',
         'btn': '0 2px 4px rgba(0,0,0,0.1)',
         'btn-hover': '0 4px 14px rgba(0,0,0,0.18)',
+      },
+      fontFamily: {
+        sans: ['"Plus Jakarta Sans"', '-apple-system', 'BlinkMacSystemFont', '"Noto Sans SC"', 'sans-serif'],
       },
       fontSize: {
         h1: ['28px', { fontWeight: '700' }],

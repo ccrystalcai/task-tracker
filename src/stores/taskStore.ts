@@ -69,7 +69,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         if (source.recurrenceEndDate && nextDate > source.recurrenceEndDate) break;
 
         // Skip if an instance already exists for this date
-        if (instances.some((inst) => inst.dueDate === nextDate) || source.dueDate === nextDate) {
+        if (instances.some((inst) => inst.dueDate === nextDate)) {
           nextDate = addToDate(nextDate, source.recurrenceType, source.recurrenceInterval);
           continue;
         }
@@ -304,7 +304,16 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   deleteTask: async (id) => {
+    // Cascade-delete child instances for recurring source tasks
+    const childIds = get().tasks
+      .filter((t) => t.sourceTaskId === id)
+      .map((t) => t.id);
+    for (const cid of childIds) {
+      await db.tasks.delete(cid);
+    }
     await db.tasks.delete(id);
-    set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) }));
+    set((s) => ({
+      tasks: s.tasks.filter((t) => t.id !== id && !childIds.includes(t.id)),
+    }));
   },
 }));

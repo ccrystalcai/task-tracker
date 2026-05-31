@@ -12,6 +12,7 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "date-fns": "^3.6.0",
     "dexie": "^4.0.8",
     "fuse.js": "^7.0.0",

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Goal, Task, TaskRecord, JournalEntry, DailySummary, Tag, FocusSession } from './schema';
+import type { Goal, Task, TaskRecord, JournalEntry, DailySummary, Tag, FocusSession, GoalTemplate, Clip } from './schema';
 
 export class TaskTrackerDB extends Dexie {
   goals!: Table<Goal, string>;
@@ -9,6 +9,8 @@ export class TaskTrackerDB extends Dexie {
   dailySummaries!: Table<DailySummary, string>;
   tags!: Table<Tag, string>;
   focusSessions!: Table<FocusSession, string>;
+  goalTemplates!: Table<GoalTemplate, string>;
+  clips!: Table<Clip, string>;
 
   constructor() {
     super('TaskTrackerDB');
@@ -98,6 +100,89 @@ export class TaskTrackerDB extends Dexie {
     }).upgrade(async (tx) => {
       await tx.table('journalEntries').toCollection().modify((e) => {
         if (!e.images) e.images = [];
+      });
+    });
+
+    this.version(7).stores({
+      goals: 'id, status',
+      tasks: 'id, goalId, dueDate, status, priority, *tags',
+      taskRecords: 'id, taskId, date',
+      journalEntries: 'id, date',
+      dailySummaries: 'id, date',
+      tags: 'id, name, parentId',
+      focusSessions: 'id, taskId, date',
+      goalTemplates: 'id',
+    });
+
+    this.version(8).stores({
+      goals: 'id, status',
+      tasks: 'id, goalId, dueDate, status, priority, *tags',
+      taskRecords: 'id, taskId, date',
+      journalEntries: 'id, date',
+      dailySummaries: 'id, date',
+      tags: 'id, name, parentId',
+      focusSessions: 'id, taskId, date',
+      goalTemplates: 'id',
+      clips: 'id, *tags, createdAt',
+    });
+
+    this.version(9).stores({
+      goals: 'id, status',
+      tasks: 'id, goalId, dueDate, status, priority, *tags',
+      taskRecords: 'id, taskId, date',
+      journalEntries: 'id, date',
+      dailySummaries: 'id, date',
+      tags: 'id, name, parentId',
+      focusSessions: 'id, taskId, date',
+      goalTemplates: 'id',
+      clips: 'id, *tags, createdAt',
+    }).upgrade(async (tx) => {
+      await tx.table('clips').toCollection().modify((clip) => {
+        if (!clip.image) clip.image = '';
+      });
+    });
+
+    this.version(10).stores({
+      goals: 'id, status',
+      tasks: 'id, goalId, dueDate, status, priority, *tags',
+      taskRecords: 'id, taskId, date',
+      journalEntries: 'id, date',
+      dailySummaries: 'id, date',
+      tags: 'id, name, parentId',
+      focusSessions: 'id, taskId, date',
+      goalTemplates: 'id',
+      clips: 'id, *tags, createdAt',
+    }).upgrade(async (tx) => {
+      await tx.table('clips').toCollection().modify((clip) => {
+        if (!clip.convertedTaskId) clip.convertedTaskId = null;
+      });
+    });
+
+    this.version(11).stores({
+      goals: 'id, status',
+      tasks: 'id, goalId, dueDate, status, priority, *tags',
+      taskRecords: 'id, taskId, date',
+      journalEntries: 'id, date',
+      dailySummaries: 'id, date',
+      tags: 'id, name, parentId',
+      focusSessions: 'id, taskId, date',
+      goalTemplates: 'id',
+      clips: 'id, *tags, createdAt',
+    });
+
+    this.version(12).stores({
+      goals: 'id, status',
+      tasks: 'id, goalId, dueDate, status, priority, *tags',
+      taskRecords: 'id, taskId, date',
+      journalEntries: 'id, date, *tags',
+      dailySummaries: 'id, date',
+      tags: 'id, name, parentId',
+      focusSessions: 'id, taskId, date',
+      goalTemplates: 'id',
+      clips: 'id, *tags, createdAt',
+    }).upgrade(async (tx) => {
+      await tx.table('journalEntries').toCollection().modify((entry) => {
+        if (!entry.tags) entry.tags = [];
       });
     });
   }

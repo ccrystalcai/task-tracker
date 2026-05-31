@@ -1,23 +1,16 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { useUIStore } from '@/stores/uiStore';
-import {
-  LayoutDashboard,
-  Target,
-  BarChart3,
-  BookOpen,
-  Search,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
+import { Gauge, Target, ChartBar, BookOpen, MagnifyingGlass, Gear, CaretLeft, CaretRight, Paperclip, ListChecks } from '@phosphor-icons/react';
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: '今日看板' },
+  { to: '/', icon: Gauge, label: '今日看板' },
   { to: '/goals', icon: Target, label: '目标规划' },
-  { to: '/analytics', icon: BarChart3, label: '分析统计' },
+  { to: '/tasks', icon: ListChecks, label: '任务列表' },
+  { to: '/analytics', icon: ChartBar, label: '分析统计' },
   { to: '/journal', icon: BookOpen, label: '反思日记' },
-  { to: '/search', icon: Search, label: '全局搜索' },
-  { to: '/settings', icon: Settings, label: '设置' },
+  { to: '/clips', icon: Paperclip, label: '剪藏' },
+  { to: '/search', icon: MagnifyingGlass, label: '全局搜索' },
+  { to: '/settings', icon: Gear, label: '设置' },
 ];
 
 export default function Sidebar() {
@@ -26,7 +19,7 @@ export default function Sidebar() {
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
 
   return (
-    <aside className={`fixed left-0 top-0 h-full bg-surface border-r border-border flex flex-col z-10 transition-all duration-200 ${
+    <aside className={`fixed left-0 top-0 h-full bg-surface border-r border-border flex flex-col z-10 transition duration-200 ${
       collapsed ? 'w-[60px]' : 'w-[220px]'
     }`}>
       {/* Logo */}
@@ -75,9 +68,9 @@ export default function Sidebar() {
             collapsed ? 'justify-center' : ''
           }`}
         >
-          {collapsed ? <ChevronRight size={18} /> : (
+          {collapsed ? <CaretRight size={18} /> : (
             <>
-              <ChevronLeft size={18} />
+              <CaretLeft weight="bold" size={18} />
               <span>收起菜单</span>
             </>
           )}

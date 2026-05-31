@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import Modal from '@/components/ui/Modal';
-import { Download, Film, Camera, BookOpen } from 'lucide-react';
+import { Download, FilmReel, Camera, BookOpen } from '@phosphor-icons/react';
 import { format, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import type { Mood } from '@/db/schema';
@@ -86,7 +86,7 @@ export default function GalleryPosterModal({ open, onClose, photos, date, summar
                 <button
                   key={t.key}
                   onClick={() => setCombineTemplate(t.key)}
-                  className={`flex flex-col items-start gap-0.5 px-4 py-2.5 rounded-card border transition-all ${
+                  className={`flex flex-col items-start gap-0.5 px-4 py-2.5 rounded-card border transition ${
                     combineTemplate === t.key
                       ? 'border-primary bg-primary/5 text-primary'
                       : 'border-border text-text-secondary hover:border-primary-light'
@@ -113,7 +113,7 @@ export default function GalleryPosterModal({ open, onClose, photos, date, summar
           <div className="flex justify-end gap-3 pt-2 border-t border-border">
             <button className="btn-secondary" onClick={onClose}>关闭</button>
             <button className="btn-primary flex items-center gap-2" onClick={handleExport}>
-              <Download size={16} />
+              <Download weight="bold" size={16} />
               下载长图
             </button>
           </div>
@@ -142,17 +142,17 @@ export default function GalleryPosterModal({ open, onClose, photos, date, summar
           <div className="flex gap-2">
             {([
               { value: 'single' as LayoutMode, label: '单张', icon: Camera, hint: '适合1张照片' },
-              { value: 'filmstrip' as LayoutMode, label: '胶片', icon: Film, hint: '电影感拼接' },
+              { value: 'filmstrip' as LayoutMode, label: '胶片', icon: FilmReel, hint: '电影感拼接' },
               { value: 'magazine' as LayoutMode, label: '杂志', icon: BookOpen, hint: '图文混排' },
             ]).map((m) => (
               <button
                 key={m.value}
                 onClick={() => setLayout(m.value)}
-                className={`flex flex-col items-center gap-0.5 px-4 py-2.5 rounded-card border transition-all ${
+                className={`flex flex-col items-center gap-0.5 px-4 py-2.5 rounded-card border transition ${
                   layout === m.value ? 'border-primary bg-primary/5 text-primary' : 'border-border text-text-secondary hover:border-primary-light'
                 }`}
               >
-                <m.icon size={18} />
+                <m.icon size={18} weight="duotone" />
                 <span className="text-small">{m.label}</span>
               </button>
             ))}
@@ -179,7 +179,7 @@ export default function GalleryPosterModal({ open, onClose, photos, date, summar
                     <img
                       src={url}
                       onClick={() => togglePhoto(url)}
-                      className={`w-16 h-16 object-cover rounded-lg cursor-pointer border-2 transition-all ${
+                      className={`w-16 h-16 object-cover rounded-lg cursor-pointer border-2 transition ${
                         isSelected ? 'border-primary opacity-100' : 'border-transparent opacity-40 hover:opacity-60'
                       }`}
                     />
@@ -211,7 +211,7 @@ export default function GalleryPosterModal({ open, onClose, photos, date, summar
         <div className="flex justify-end gap-3 pt-2 border-t border-border">
           <button className="btn-secondary" onClick={onClose}>关闭</button>
           <button className="btn-primary flex items-center gap-2" onClick={handleExport}>
-            <Download size={16} />
+            <Download weight="bold" size={16} />
             下载海报
           </button>
         </div>
@@ -238,7 +238,7 @@ function SingleLayout({ photo, date, summary }: { photo: string; date: string; s
         )}
       </div>
       <div className="px-6 pb-5">
-        <p className="text-white/15 text-[10px] tracking-widest">TASKTRACKER</p>
+        <p className="text-white/15 text-[10px] tracking-widest">小懒同学</p>
       </div>
     </div>
   );
@@ -248,7 +248,7 @@ function SingleLayout({ photo, date, summary }: { photo: string; date: string; s
 function FilmstripLayout({ photos, date, summary }: { photos: string[]; date: string; summary?: string }) {
   return (
     <div className="flex flex-col h-full">
-      {/* Film strip */}
+      {/* FilmReel strip */}
       <div className="px-3 pt-6 pb-2">
         {/* Top sprocket holes */}
         <div className="h-4 relative overflow-hidden mb-0">
@@ -284,7 +284,7 @@ function FilmstripLayout({ photos, date, summary }: { photos: string[]; date: st
         {summary && <p className="text-white/80 text-sm leading-relaxed line-clamp-3">{summary}</p>}
       </div>
       <div className="px-5 pb-4">
-        <p className="text-white/15 text-[10px] tracking-widest">TASKTRACKER · MEMORIES</p>
+        <p className="text-white/15 text-[10px] tracking-widest">小懒同学 · MEMORIES</p>
       </div>
     </div>
   );
@@ -304,7 +304,7 @@ function MagazineLayout({ photos, date, summary }: { photos: string[]; date: str
         </div>
         <div className="px-7 pb-5">
           <div className="w-6 h-0.5 bg-black/20 mb-3" />
-          <p className="text-black/25 text-[10px] tracking-widest">TASKTRACKER</p>
+          <p className="text-black/25 text-[10px] tracking-widest">小懒同学</p>
         </div>
       </div>
     );
@@ -332,7 +332,7 @@ function MagazineLayout({ photos, date, summary }: { photos: string[]; date: str
         {summary && <p className="text-black/80 text-sm leading-relaxed line-clamp-3">{summary}</p>}
       </div>
       <div className="px-7 pb-5">
-        <p className="text-black/25 text-[10px] tracking-widest">TASKTRACKER</p>
+        <p className="text-black/25 text-[10px] tracking-widest">小懒同学</p>
       </div>
     </div>
   );
@@ -398,7 +398,7 @@ function CombineLayout({ entries }: { entries: CombineEntry[] }) {
       {/* Footer */}
       <div style={{ textAlign: 'center', marginTop: '40px', paddingTop: '28px', borderTop: '1px solid #e8e8e8' }}>
         <div style={{ fontSize: '9px', letterSpacing: '4px', color: '#ccc', fontWeight: 500 }}>
-          TASKTRACKER
+          小懒同学
         </div>
       </div>
     </div>
@@ -624,13 +624,13 @@ function MinimalLayout({ entries }: { entries: CombineEntry[] }) {
         );
       })}
       <div style={{ marginTop: '48px', paddingTop: '24px', borderTop: '1px solid #eee' }}>
-        <div style={{ fontSize: '9px', letterSpacing: '4px', color: '#ccc' }}>TASKTRACKER</div>
+        <div style={{ fontSize: '9px', letterSpacing: '4px', color: '#ccc' }}>小懒同学</div>
       </div>
     </div>
   );
 }
 
-/* ========== Vintage Film Layout ========== */
+/* ========== Vintage FilmReel Layout ========== */
 
 function VintageLayout({ entries }: { entries: CombineEntry[] }) {
   const dates = entries.map((e) => e.date).sort();
@@ -688,7 +688,7 @@ function VintageLayout({ entries }: { entries: CombineEntry[] }) {
       })}
 
       <div style={{ marginTop: '40px', paddingTop: '24px', borderTop: '1px solid rgba(212,167,116,0.2)', textAlign: 'center' }}>
-        <div style={{ fontSize: '9px', letterSpacing: '5px', color: '#6a5a4a' }}>TASKTRACKER · FILM</div>
+        <div style={{ fontSize: '9px', letterSpacing: '5px', color: '#6a5a4a' }}>小懒同学 · FILM</div>
       </div>
     </div>
   );
@@ -821,7 +821,7 @@ function FreshLayout({ entries }: { entries: CombineEntry[] }) {
       })}
 
       <div style={{ marginTop: '32px', textAlign: 'center' }}>
-        <div style={{ fontSize: '9px', letterSpacing: '4px', color: '#ddd' }}>TASKTRACKER</div>
+        <div style={{ fontSize: '9px', letterSpacing: '4px', color: '#ddd' }}>小懒同学</div>
       </div>
     </div>
   );

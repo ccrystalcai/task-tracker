@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import Modal from '@/components/ui/Modal';
 import TaskDetailModal from '@/components/task/TaskDetailModal';
 import type { Task, Goal } from '@/db/schema';
-import { CheckCircle2, Circle, SkipForward, Star, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle, Circle, Clock, SkipForward, Star, CaretLeft, CaretRight, Image as ImageIcon, FileText, ChatTeardropDots } from '@phosphor-icons/react';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
@@ -66,14 +66,14 @@ export default function TaskHistoryModal({ open, onClose, task, allTasks, goalMa
           {/* Calendar */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <button onClick={() => setCalendarDate((d) => subMonths(d, 1))} className="p-1 hover:bg-surface-hover rounded">
-                <ChevronLeft size={18} />
+              <button onClick={() => setCalendarDate((d) => subMonths(d, 1))} className="p-1 hover:bg-surface-hover rounded" aria-label="上个月">
+                <CaretLeft weight="bold" size={18} />
               </button>
               <span className="text-body font-medium">
                 {format(calendarDate, 'yyyy年M月', { locale: zhCN })}
               </span>
-              <button onClick={() => setCalendarDate((d) => addMonths(d, 1))} className="p-1 hover:bg-surface-hover rounded">
-                <ChevronRight size={18} />
+              <button onClick={() => setCalendarDate((d) => addMonths(d, 1))} className="p-1 hover:bg-surface-hover rounded" aria-label="下个月">
+                <CaretRight weight="bold" size={18} />
               </button>
             </div>
 
@@ -98,6 +98,7 @@ export default function TaskHistoryModal({ open, onClose, task, allTasks, goalMa
                   cursor = 'cursor-pointer';
                   if (inst.status === 'completed') bg = 'bg-success/40';
                   else if (inst.status === 'skipped') bg = 'bg-warning/40';
+                  else if (inst.status === 'in-progress') bg = 'bg-primary/30';
                   else bg = 'bg-surface-hover';
                 }
 
@@ -109,7 +110,7 @@ export default function TaskHistoryModal({ open, onClose, task, allTasks, goalMa
                     title={inst
                       ? [
                           inst.dueDate,
-                          inst.status === 'completed' ? '已完成' : inst.status === 'skipped' ? '已跳过' : '待完成',
+                          inst.status === 'completed' ? '已完成' : inst.status === 'skipped' ? '已跳过' : inst.status === 'in-progress' ? '进行中' : '待完成',
                           inst.actualMinutes > 0 ? `实际${inst.actualMinutes}分钟` : '',
                           inst.score != null ? `评分${inst.score}/5` : '',
                           inst.reflection ? `反思: ${inst.reflection.substring(0, 30)}` : '',
@@ -121,11 +122,13 @@ export default function TaskHistoryModal({ open, onClose, task, allTasks, goalMa
                     {inst && (
                       <div className="flex justify-center mt-0.5">
                         {inst.status === 'completed' ? (
-                          <CheckCircle2 size={12} className="text-success" />
+                          <CheckCircle weight="duotone" size={12} className="text-success" />
                         ) : inst.status === 'skipped' ? (
-                          <SkipForward size={12} className="text-warning" />
+                          <SkipForward weight="bold" size={12} className="text-warning" />
+                        ) : inst.status === 'in-progress' ? (
+                          <Clock weight="bold" size={12} className="text-primary" />
                         ) : (
-                          <Circle size={12} className="text-text-secondary" />
+                          <Circle weight="duotone" size={12} className="text-text-secondary" />
                         )}
                       </div>
                     )}
@@ -178,7 +181,7 @@ export default function TaskHistoryModal({ open, onClose, task, allTasks, goalMa
                           </span>
                           {inst.score != null && (
                             <span className="text-warning flex items-center gap-0.5 text-small">
-                              <Star size={11} fill="#F59E0B" color="#F59E0B" />{inst.score}
+                              <Star weight="duotone" size={11} fill="#F59E0B" color="#F59E0B" />{inst.score}
                             </span>
                           )}
                         </div>
@@ -191,12 +194,12 @@ export default function TaskHistoryModal({ open, onClose, task, allTasks, goalMa
                         </div>
                         {inst.reflection && (
                           <p className="mt-0.5 text-caption text-text-secondary italic line-clamp-1">
-                            💬 {inst.reflection}
+                            <ChatTeardropDots weight="duotone" size={13} className="inline mr-0.5" />{inst.reflection}
                           </p>
                         )}
                         {inst.notes && inst.notes !== inst.description && (
                           <p className="mt-0.5 text-caption text-text-secondary line-clamp-1">
-                            📝 {inst.notes.substring(0, 60)}
+                            <FileText weight="duotone" size={13} className="inline mr-0.5" />{inst.notes.substring(0, 60)}
                           </p>
                         )}
                       </div>

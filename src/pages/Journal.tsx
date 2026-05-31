@@ -1,55 +1,68 @@
 import { useEffect, useState } from 'react';
 import { useJournalStore } from '@/stores/journalStore';
 import { useTaskStore } from '@/stores/taskStore';
+import { useClipStore } from '@/stores/clipStore';
+import { useTagStore } from '@/stores/tagStore';
 import { db } from '@/db';
 import Modal from '@/components/ui/Modal';
+import TimeFilterBar from '@/components/ui/TimeFilterBar';
 import GalleryPosterModal from '@/components/export/GalleryPosterModal';
+import { SkeletonCard, SkeletonList } from '@/components/ui/Skeleton';
 import type { JournalEntry, Mood, DailySummary } from '@/db/schema';
-import { BookOpen, Smile, Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Edit3, Trash2, Plus, Lightbulb, Heart, Sun, LayoutGrid, CheckCircle2, Circle, SkipForward, Clock, ImagePlus, X, Download } from 'lucide-react';
-import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import { BookOpen, Calendar, CaretDown, CaretUp, CaretLeft, CaretRight, PencilSimple, Trash, Plus, Lightbulb, Heart, SquaresFour, CheckCircle, Circle, SkipForward, Clock, CameraPlus, X, Download, Paperclip, ArrowSquareOut, Image, Sun, Smiley } from '@phosphor-icons/react';
+import type { AppIcon } from '@/constants/moods';
+import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { MOOD_ICON, MOOD_LABEL, WEATHER_ICON, WEATHER_LABEL } from '@/constants/moods';
+import type { Weather } from '@/constants/moods';
 
-const MOOD_MAP: Record<Mood, { emoji: string; label: string }> = {
-  great: { emoji: '😄', label: '很棒' },
-  good: { emoji: '😊', label: '不错' },
-  okay: { emoji: '😐', label: '一般' },
-  bad: { emoji: '😔', label: '不太好' },
-  terrible: { emoji: '😫', label: '很差' },
+const MOOD_MAP: Record<Mood, { icon: AppIcon; label: string }> = {
+  great: { icon: MOOD_ICON.great, label: MOOD_LABEL.great },
+  good: { icon: MOOD_ICON.good, label: MOOD_LABEL.good },
+  okay: { icon: MOOD_ICON.okay, label: MOOD_LABEL.okay },
+  bad: { icon: MOOD_ICON.bad, label: MOOD_LABEL.bad },
+  terrible: { icon: MOOD_ICON.terrible, label: MOOD_LABEL.terrible },
 };
 
-const WEATHER_MAP: Record<string, { emoji: string; label: string }> = {
-  sunny: { emoji: '☀️', label: '晴' },
-  cloudy: { emoji: '⛅', label: '多云' },
-  rainy: { emoji: '🌧', label: '雨' },
-  stormy: { emoji: '⛈', label: '暴风雨' },
-  snowy: { emoji: '❄️', label: '雪' },
-  windy: { emoji: '💨', label: '风' },
+const WEATHER_MAP: Record<Weather, { icon: AppIcon; label: string }> = {
+  sunny: { icon: WEATHER_ICON.sunny, label: WEATHER_LABEL.sunny },
+  cloudy: { icon: WEATHER_ICON.cloudy, label: WEATHER_LABEL.cloudy },
+  rainy: { icon: WEATHER_ICON.rainy, label: WEATHER_LABEL.rainy },
+  stormy: { icon: WEATHER_ICON.stormy, label: WEATHER_LABEL.stormy },
+  snowy: { icon: WEATHER_ICON.snowy, label: WEATHER_LABEL.snowy },
+  windy: { icon: WEATHER_ICON.windy, label: WEATHER_LABEL.windy },
 };
 
-const MOODS: { value: Mood; emoji: string; label: string }[] = [
-  { value: 'great', emoji: '😄', label: '很棒' },
-  { value: 'good', emoji: '😊', label: '不错' },
-  { value: 'okay', emoji: '😐', label: '一般' },
-  { value: 'bad', emoji: '😔', label: '不太好' },
-  { value: 'terrible', emoji: '😫', label: '很差' },
+const MOODS: { value: Mood; icon: AppIcon; label: string }[] = [
+  { value: 'great', icon: MOOD_ICON.great, label: MOOD_LABEL.great },
+  { value: 'good', icon: MOOD_ICON.good, label: MOOD_LABEL.good },
+  { value: 'okay', icon: MOOD_ICON.okay, label: MOOD_LABEL.okay },
+  { value: 'bad', icon: MOOD_ICON.bad, label: MOOD_LABEL.bad },
+  { value: 'terrible', icon: MOOD_ICON.terrible, label: MOOD_LABEL.terrible },
 ];
 
-const WEATHERS: { value: 'sunny' | 'cloudy' | 'rainy' | 'stormy' | 'snowy' | 'windy'; emoji: string; label: string }[] = [
-  { value: 'sunny', emoji: '☀️', label: '晴' },
-  { value: 'cloudy', emoji: '⛅', label: '多云' },
-  { value: 'rainy', emoji: '🌧', label: '雨' },
-  { value: 'stormy', emoji: '⛈', label: '暴风雨' },
-  { value: 'snowy', emoji: '❄️', label: '雪' },
-  { value: 'windy', emoji: '💨', label: '风' },
+const WEATHERS: { value: Weather; icon: AppIcon; label: string }[] = [
+  { value: 'sunny', icon: WEATHER_ICON.sunny, label: WEATHER_LABEL.sunny },
+  { value: 'cloudy', icon: WEATHER_ICON.cloudy, label: WEATHER_LABEL.cloudy },
+  { value: 'rainy', icon: WEATHER_ICON.rainy, label: WEATHER_LABEL.rainy },
+  { value: 'stormy', icon: WEATHER_ICON.stormy, label: WEATHER_LABEL.stormy },
+  { value: 'snowy', icon: WEATHER_ICON.snowy, label: WEATHER_LABEL.snowy },
+  { value: 'windy', icon: WEATHER_ICON.windy, label: WEATHER_LABEL.windy },
 ];
 
 type ViewMode = 'mood' | 'daily' | 'gallery';
 
 const today = new Date().toISOString().split('T')[0];
 
+function InlineIcon({ icon: I, size = 20 }: { icon: AppIcon; size?: number }) {
+  return <I size={size} />;
+}
+
 export default function Journal() {
   const { entries, loading, fetchEntries, upsertEntry, deleteEntry } = useJournalStore();
   const { tasks, fetchTasks } = useTaskStore();
+  const { clips, fetchClips } = useClipStore();
+  const { tags, fetchTags } = useTagStore();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingEntry, setEditingEntry] = useState<JournalEntry | null>(null);
   const [editMood, setEditMood] = useState<Mood>('good');
@@ -61,26 +74,28 @@ export default function Journal() {
   const [newContent, setNewContent] = useState('');
   const [newSummary, setNewSummary] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
-  const [galleryMonth, setGalleryMonth] = useState<string>('all');
   const [dailySummaries, setDailySummaries] = useState<DailySummary[]>([]);
   const [editWeather, setEditWeather] = useState<'sunny' | 'cloudy' | 'rainy' | 'stormy' | 'snowy' | 'windy' | null>(null);
   const [newWeather, setNewWeather] = useState<'sunny' | 'cloudy' | 'rainy' | 'stormy' | 'snowy' | 'windy' | null>(null);
   const [editImages, setEditImages] = useState<string[]>([]);
   const [newImages, setNewImages] = useState<string[]>([]);
+  const [newTags, setNewTags] = useState<string[]>([]);
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [journalFilterTab, setJournalFilterTab] = useState<'time' | 'tag'>('time');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [editShowMoodWeather, setEditShowMoodWeather] = useState(false);
-  const [newShowMoodWeather, setNewShowMoodWeather] = useState(false);
   const [galleryShowMood, setGalleryShowMood] = useState(true);
   const [galleryShowWeather, setGalleryShowWeather] = useState(true);
   const [galleryShowSummary, setGalleryShowSummary] = useState(true);
-  const [galleryShowImages, setGalleryShowImages] = useState(true);
-  const [galleryTimeRange, setGalleryTimeRange] = useState<'all' | 'this-week' | 'this-month'>('all');
+  const [galleryTimeRange, setGalleryTimeRange] = useState<'today' | 'last-3-days' | 'last-7-days' | 'this-week' | 'this-month' | 'last-30-days' | 'all'>('all');
+  const [entryTimeFilter, setEntryTimeFilter] = useState<'today' | 'last-3-days' | 'last-7-days' | 'this-week' | 'this-month' | 'last-30-days' | 'all'>('all');
   const [galleryOnlyImages, setGalleryOnlyImages] = useState(false);
   const [posterData, setPosterData] = useState<{ photos: string[]; date: string; summary: string } | null>(null);
   const [combineMode, setCombineMode] = useState(false);
   const [selectedCombineIds, setSelectedCombineIds] = useState<Set<string>>(new Set());
+  const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set());
   const [combineEntriesData, setCombineEntriesData] = useState<Array<{
     date: string; mood: Mood; weather: string | null; summary: string; photos: string[];
   }> | null>(null);
@@ -88,8 +103,10 @@ export default function Journal() {
   useEffect(() => {
     fetchEntries();
     fetchTasks();
+    fetchClips();
+    fetchTags();
     db.dailySummaries.toArray().then(setDailySummaries);
-  }, [fetchEntries, fetchTasks]);
+  }, [fetchEntries, fetchTasks, fetchClips, fetchTags]);
 
   const summaryByDate = dailySummaries.reduce<Record<string, DailySummary>>((acc, s) => {
     acc[s.date] = s;
@@ -120,6 +137,7 @@ export default function Journal() {
     setEditContent(entry.content);
     setEditSummary(entry.summary || '');
     setEditImages(entry.images || []);
+    setEditTags(entry.tags || []);
   };
 
   const handleSaveEdit = async () => {
@@ -136,6 +154,7 @@ export default function Journal() {
         summary: editSummary,
         suggestions: editingEntry.suggestions,
         images: editImages,
+        tags: editTags,
       });
       setEditingEntry(null);
     } catch (e) {
@@ -157,10 +176,12 @@ export default function Journal() {
         summary: newSummary,
         suggestions: [],
         images: newImages,
+        tags: newTags,
       });
       setShowCreate(false);
       setNewContent('');
       setNewImages([]);
+      setNewTags([]);
       setNewMood('good');
       setNewDate(new Date().toISOString().split('T')[0]);
     } catch (e) {
@@ -229,13 +250,37 @@ export default function Journal() {
     return `${y}年${parseInt(m)}月`;
   };
 
+  const filterEntriesByTime = (list: JournalEntry[], filter: typeof entryTimeFilter) => {
+    if (filter === 'all') return list;
+    const now = new Date();
+    const todayStr = format(now, 'yyyy-MM-dd');
+    let start = ''; let end = '';
+    if (filter === 'today') { start = todayStr; end = todayStr; }
+    else if (filter === 'last-3-days') { start = format(subDays(now, 2), 'yyyy-MM-dd'); end = todayStr; }
+    else if (filter === 'last-7-days') { start = format(subDays(now, 6), 'yyyy-MM-dd'); end = todayStr; }
+    else if (filter === 'last-30-days') { start = format(subDays(now, 29), 'yyyy-MM-dd'); end = todayStr; }
+    else if (filter === 'this-week') { start = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'); end = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'); }
+    else if (filter === 'this-month') { start = format(startOfMonth(now), 'yyyy-MM-dd'); end = format(endOfMonth(now), 'yyyy-MM-dd'); }
+    return list.filter((e) => e.date >= start && e.date <= end);
+  };
+
+  const TIME_FILTER_OPTIONS = [
+    { key: 'today' as const, label: '今日' },
+    { key: 'last-3-days' as const, label: '近3天' },
+    { key: 'last-7-days' as const, label: '近7天' },
+    { key: 'this-week' as const, label: '本周' },
+    { key: 'this-month' as const, label: '本月' },
+    { key: 'last-30-days' as const, label: '近30天' },
+    { key: 'all' as const, label: '全部' },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="card">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="text-h3 flex items-center gap-2">
-              <BookOpen size={22} className="text-primary" />
+              <BookOpen weight="duotone" size={22} className="text-primary" />
               反思日记
             </h3>
             <p className="text-caption text-text-secondary mt-1">
@@ -244,29 +289,29 @@ export default function Journal() {
                 : '完成一天后，可以在这里写反思日记'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <div className="flex bg-surface-hover rounded-btn p-0.5">
               <button
                 onClick={() => setViewMode('daily')}
-                className={`px-3 py-1 rounded-btn text-small transition-all flex items-center gap-1 ${viewMode === 'daily' ? 'bg-primary text-white' : 'text-text-secondary'}`}
+                className={`px-2.5 py-1 rounded-btn text-small transition flex items-center gap-0.5 ${viewMode === 'daily' ? 'bg-primary text-white' : 'text-text-secondary'}`}
               >
-                <Sun size={14} />今日
+                <Sun weight="duotone" size={13} />今日
               </button>
               <button
                 onClick={() => setViewMode('mood')}
-                className={`px-3 py-1 rounded-btn text-small transition-all flex items-center gap-1 ${viewMode === 'mood' ? 'bg-primary text-white' : 'text-text-secondary'}`}
+                className={`px-2.5 py-1 rounded-btn text-small transition flex items-center gap-0.5 ${viewMode === 'mood' ? 'bg-primary text-white' : 'text-text-secondary'}`}
               >
-                <Heart size={14} />心情
+                <Heart weight="duotone" size={13} />心情
               </button>
               <button
                 onClick={() => setViewMode('gallery')}
-                className={`px-3 py-1 rounded-btn text-small transition-all flex items-center gap-1 ${viewMode === 'gallery' ? 'bg-primary text-white' : 'text-text-secondary'}`}
+                className={`px-2.5 py-1 rounded-btn text-small transition flex items-center gap-0.5 ${viewMode === 'gallery' ? 'bg-primary text-white' : 'text-text-secondary'}`}
               >
-                <LayoutGrid size={14} />画廊
+                <SquaresFour weight="duotone" size={13} />画廊
               </button>
             </div>
             <button className="btn-primary flex items-center gap-1.5" onClick={() => { setError(null); setShowCreate(true); }}>
-              <Plus size={18} />
+              <Plus weight="bold" size={16} />
               写日记
             </button>
           </div>
@@ -274,12 +319,13 @@ export default function Journal() {
       </div>
 
       {loading ? (
-        <div className="card text-center py-12">
-          <p className="text-text-secondary">加载中...</p>
+        <div className="space-y-4">
+          <SkeletonCard />
+          <SkeletonList count={4} />
         </div>
       ) : entries.length === 0 ? (
         <div className="card text-center py-16 space-y-4">
-          <Smile size={48} className="mx-auto text-text-secondary opacity-40" />
+          <Smiley weight="duotone" size={48} className="mx-auto text-text-secondary opacity-40" />
           <div>
             <p className="text-h3 text-text-secondary mb-2">还没有日记</p>
             <p className="text-body text-text-secondary">
@@ -294,41 +340,9 @@ export default function Journal() {
         /* Gallery view */
         <>
         <div>
-          {/* Toolbar: month filter + field toggles */}
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-small text-text-secondary flex-shrink-0">时间：</span>
-              <div className="flex gap-1.5">
-                {(['all', 'this-week', 'this-month'] as const).map((preset) => (
-                  <button key={preset} onClick={() => setGalleryTimeRange(preset)}
-                    className={`px-3 py-1 rounded-full text-small transition-all ${galleryTimeRange === preset ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}>
-                    {preset === 'all' ? '全部' : preset === 'this-week' ? '本周' : '本月'}
-                  </button>
-                ))}
-              </div>
-              {(() => {
-                const months = [...new Set(entries.map((e) => e.date.substring(0, 7)))].sort().reverse();
-                if (months.length <= 1) return null;
-                return (
-                  <>
-                    <span className="text-small text-text-secondary flex-shrink-0 ml-3">月份：</span>
-                    <div className="flex gap-1.5 flex-wrap">
-                      <button onClick={() => setGalleryMonth('all')}
-                        className={`px-3 py-1 rounded-full text-small transition-all ${galleryMonth === 'all' ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}>
-                        全部
-                      </button>
-                      {months.map((m) => (
-                        <button key={m} onClick={() => setGalleryMonth(m)}
-                          className={`px-3 py-1 rounded-full text-small transition-all ${galleryMonth === m ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}>
-                          {m.replace('-', '年')}月
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-            <div className="flex items-center gap-2">
+          {/* Toolbar: field toggles */}
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {combineMode ? (
                 <>
                   <span className="text-small text-primary font-medium">
@@ -336,7 +350,7 @@ export default function Journal() {
                   </span>
                   <button
                     onClick={() => { setCombineMode(false); setSelectedCombineIds(new Set()); }}
-                    className="px-2.5 py-1 rounded-full text-small transition-all bg-surface-hover text-text-secondary"
+                    className="px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-[11px] md:text-small whitespace-nowrap transition bg-surface-hover text-text-secondary"
                   >
                     取消
                   </button>
@@ -344,150 +358,235 @@ export default function Journal() {
               ) : (
                 <button
                   onClick={() => { setCombineMode(true); setSelectedCombineIds(new Set()); }}
-                  className="px-2.5 py-1 rounded-full text-small transition-all bg-primary text-white flex items-center gap-1"
+                  className="px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-[11px] md:text-small whitespace-nowrap transition bg-primary text-white flex items-center gap-0.5"
                 >
-                  <Download size={14} />
+                  <Download weight="bold" size={12} />
                   组合导出
                 </button>
               )}
-              <span className="text-small text-text-secondary flex-shrink-0">显示：</span>
+              <span className="text-[11px] md:text-small text-text-secondary flex-shrink-0">显示：</span>
               <button
                 onClick={() => setGalleryOnlyImages(!galleryOnlyImages)}
-                className={`px-2.5 py-1 rounded-full text-small transition-all ${galleryOnlyImages ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}
+                className={`px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-[11px] md:text-small whitespace-nowrap transition ${galleryOnlyImages ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}
               >
-                🖼 仅图片
+                <Image weight="duotone" size={14} className="inline" /> 仅图片
               </button>
               <button
                 onClick={() => setGalleryShowMood(!galleryShowMood)}
-                className={`px-2.5 py-1 rounded-full text-small transition-all ${galleryShowMood ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}
+                className={`px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-[11px] md:text-small whitespace-nowrap transition ${galleryShowMood ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}
               >
-                😊 心情
+                <Smiley weight="duotone" size={14} className="inline" /> 心情
               </button>
               <button
                 onClick={() => setGalleryShowWeather(!galleryShowWeather)}
-                className={`px-2.5 py-1 rounded-full text-small transition-all ${galleryShowWeather ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}
+                className={`px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-[11px] md:text-small whitespace-nowrap transition ${galleryShowWeather ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}
               >
                 🌤 天气
               </button>
               <button
                 onClick={() => setGalleryShowSummary(!galleryShowSummary)}
-                className={`px-2.5 py-1 rounded-full text-small transition-all ${galleryShowSummary ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}
+                className={`px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-[11px] md:text-small whitespace-nowrap transition ${galleryShowSummary ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}
               >
                 摘要
-              </button>
-              <button
-                onClick={() => setGalleryShowImages(!galleryShowImages)}
-                className={`px-2.5 py-1 rounded-full text-small transition-all ${galleryShowImages ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary'}`}
-              >
-                🖼 图片
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {entries
-            .filter((e) => {
-              // Month filter
-              if (galleryMonth !== 'all' && !e.date.startsWith(galleryMonth)) return false;
-              // Time range filter
-              if (galleryTimeRange !== 'all') {
-                const today = new Date();
-                let start = ''; let end = '';
-                if (galleryTimeRange === 'this-week') {
-                  start = format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-                  end = format(endOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-                } else if (galleryTimeRange === 'this-month') {
-                  start = format(startOfMonth(today), 'yyyy-MM-dd');
-                  end = format(endOfMonth(today), 'yyyy-MM-dd');
-                }
-                if (e.date < start || e.date > end) return false;
-              }
-              // Images-only filter
-              if (galleryOnlyImages) {
-                const ds = summaryByDate[e.date];
-                const dateTasks = tasksByDate[e.date] || [];
-                const hasImgs = (e.images || []).length > 0 ||
-                  (ds?.images || []).length > 0 ||
-                  dateTasks.some((t) => (t.images || []).length > 0);
-                if (!hasImgs) return false;
-              }
-              return true;
-            })
-            .map((entry) => {
-            const mood = MOOD_MAP[entry.mood];
-            const s = summaryByDate[entry.date];
-            const dateTasks = tasksByDate[entry.date] || [];
-            const taskImgs = dateTasks.flatMap((t) => (t.images || []).map((url) => url));
-            const dsImages = s?.images || [];
-            const entryImages = entry.images || [];
-            const allImages = [...new Set([...entryImages, ...dsImages, ...taskImgs])];
-
-            return <GalleryCard
-              key={entry.id}
-              entry={entry}
-              mood={mood}
-              allImages={allImages}
-              showMood={galleryShowMood}
-              showWeather={galleryShowWeather}
-              showSummary={galleryShowSummary}
-              showImages={galleryShowImages}
-              combineMode={combineMode}
-              isSelected={selectedCombineIds.has(entry.id)}
-              onToggleSelect={() => toggleCombineSelect(entry.id)}
-              onEdit={() => handleEdit(entry)}
-              onPreview={(url: string) => setPreviewUrl(url)}
-              onExport={() => openEntryPoster(entry)}
-            />;
-          })}
+          {/* Funnel tabs */}
+          <div className="flex items-center gap-1 border-b border-border pb-0 mb-3">
+            <button onClick={() => setJournalFilterTab('time')}
+              className={`px-3 py-1.5 text-small rounded-t-btn transition -mb-px ${journalFilterTab === 'time' ? 'border-b-2 border-primary text-primary font-medium' : 'text-text-secondary hover:text-text-primary'}`}>
+              时间
+            </button>
+            {tags.length > 0 && (
+              <button onClick={() => setJournalFilterTab('tag')}
+                className={`px-3 py-1.5 text-small rounded-t-btn transition -mb-px ${journalFilterTab === 'tag' ? 'border-b-2 border-primary text-primary font-medium' : 'text-text-secondary hover:text-text-primary'}`}>
+                标签{tagFilter.length > 0 && <span className="ml-1 bg-primary text-white text-[10px] px-1.5 py-0.5 rounded-full">{tagFilter.length}</span>}
+              </button>
+            )}
           </div>
+          {journalFilterTab === 'time' ? (
+            <TimeFilterBar value={galleryTimeRange} onChange={setGalleryTimeRange} options={TIME_FILTER_OPTIONS} />
+          ) : tags.length > 0 ? (
+            <div className="flex gap-1.5 flex-wrap mb-3">
+              {tags.map((tag) => (
+                <button key={tag.id} onClick={() => setTagFilter((prev) => prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id])}
+                  className={`px-2.5 py-1 rounded-full text-small transition ${
+                    tagFilter.includes(tag.id) ? 'text-white shadow-sm' : 'bg-surface-hover text-text-secondary hover:bg-border'
+                  }`}
+                  style={tagFilter.includes(tag.id) ? { backgroundColor: tag.color } : undefined}>
+                  {tag.name}
+                </button>
+              ))}
+              {tagFilter.length > 0 && <button onClick={() => setTagFilter([])} className="text-caption text-primary hover:underline">清除</button>}
+            </div>
+          ) : null}
+
+          {/* Month-grouped gallery */}
+          {(() => {
+            const galleryFiltered = filterEntriesByTime(entries, galleryTimeRange)
+              .filter((e) => tagFilter.length === 0 || (e.tags || []).some((tid: string) => tagFilter.includes(tid)))
+              .filter((e) => {
+                if (galleryOnlyImages) {
+                  const ds = summaryByDate[e.date];
+                  const dateTasks = tasksByDate[e.date] || [];
+                  const hasImgs = (e.images || []).length > 0 ||
+                    (ds?.images || []).length > 0 ||
+                    dateTasks.some((t) => (t.images || []).length > 0);
+                  if (!hasImgs) return false;
+                }
+                return true;
+              });
+            const galleryGrouped: Record<string, JournalEntry[]> = {};
+            galleryFiltered.forEach((e) => {
+              const m = e.date.substring(0, 7);
+              if (!galleryGrouped[m]) galleryGrouped[m] = [];
+              galleryGrouped[m].push(e);
+            });
+            if (Object.keys(galleryGrouped).length === 0) return <p className="text-caption text-text-secondary text-center py-8">没有符合条件的日记</p>;
+            return Object.entries(galleryGrouped)
+              .sort(([a], [b]) => b.localeCompare(a))
+              .map(([month, monthEntries]) => (
+                <div key={month} className="mb-4">
+                  <h4
+                    className="text-h3 text-text-secondary mb-3 flex items-center gap-2 cursor-pointer hover:text-text-primary transition-colors select-none"
+                    onClick={() => setCollapsedMonths((prev) => {
+                      const next = new Set(prev);
+                      if (next.has('gallery-' + month)) next.delete('gallery-' + month);
+                      else next.add('gallery-' + month);
+                      return next;
+                    })}
+                  >
+                    {collapsedMonths.has('gallery-' + month) ? <CaretRight weight="bold" size={18} /> : <CaretDown size={18} />}
+                    <Calendar weight="duotone" size={18} />
+                    {formatMonth(month)}
+                    <span className="text-small text-text-secondary font-normal">({monthEntries.length}篇)</span>
+                  </h4>
+                  {!collapsedMonths.has('gallery-' + month) && (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {monthEntries.map((entry) => {
+                        const mood = MOOD_MAP[entry.mood];
+                        const s = summaryByDate[entry.date];
+                        const dateTasks = tasksByDate[entry.date] || [];
+                        const taskImgs = dateTasks.flatMap((t) => (t.images || []).map((url) => url));
+                        const dsImages = s?.images || [];
+                        const entryImages = entry.images || [];
+                        const allImages = [...new Set([...entryImages, ...dsImages, ...taskImgs])];
+                        return <GalleryCard
+                          key={entry.id}
+                          entry={entry}
+                          mood={mood}
+                          allImages={allImages}
+                          showMood={galleryShowMood && !galleryOnlyImages}
+                          showWeather={galleryShowWeather && !galleryOnlyImages}
+                          showSummary={galleryShowSummary && !galleryOnlyImages}
+                          showImages={true}
+                          combineMode={combineMode}
+                          isSelected={selectedCombineIds.has(entry.id)}
+                          onToggleSelect={() => toggleCombineSelect(entry.id)}
+                          onEdit={() => handleEdit(entry)}
+                          onPreview={(url: string) => setPreviewUrl(url)}
+                          onExport={() => openEntryPoster(entry)}
+                        />;
+                      })}
+                    </div>
+                  )}
+                </div>
+              ));
+          })()}
         </div>
 
         {/* Combine mode bottom bar */}
         {combineMode && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-gray-800 shadow-xl rounded-2xl px-6 py-3 flex items-center gap-4 border border-border">
-            <span className="text-body font-medium">
-              已选择 {selectedCombineIds.size} 篇日记
+          <div className="fixed bottom-20 inset-x-0 md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:inset-x-auto z-50 bg-white dark:bg-gray-800 shadow-xl md:rounded-2xl px-4 py-3 flex items-center justify-between gap-3 border-t md:border border-border safe-bottom">
+            <span className="text-sm md:text-body font-medium">
+              已选 {selectedCombineIds.size} 篇
             </span>
-            <button
-              onClick={() => { setCombineMode(false); setSelectedCombineIds(new Set()); }}
-              className="px-4 py-1.5 rounded-full text-small bg-surface-hover text-text-secondary"
-            >
-              取消
-            </button>
-            <button
-              onClick={doCombineExport}
-              disabled={selectedCombineIds.size === 0}
-              className="px-5 py-1.5 rounded-full text-small bg-primary text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
-            >
-              <Download size={14} />
-              导出选中
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setCombineMode(false); setSelectedCombineIds(new Set()); }}
+                className="px-3 py-1.5 rounded-full text-small bg-surface-hover text-text-secondary"
+              >
+                取消
+              </button>
+              <button
+                onClick={doCombineExport}
+                disabled={selectedCombineIds.size === 0}
+                className="px-4 py-1.5 rounded-full text-small bg-primary text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                <Download weight="bold" size={14} />
+                导出
+              </button>
+            </div>
           </div>
         )}
         </>
       ) : viewMode === 'daily' ? (
-        <div className="space-y-6">
-          {Object.entries(grouped)
+        <div className="space-y-5">
+          {/* Funnel tabs */}
+          <div className="flex items-center gap-1 border-b border-border pb-0">
+            <button onClick={() => setJournalFilterTab('time')}
+              className={`px-3 py-1.5 text-small rounded-t-btn transition -mb-px ${journalFilterTab === 'time' ? 'border-b-2 border-primary text-primary font-medium' : 'text-text-secondary hover:text-text-primary'}`}>
+              时间
+            </button>
+            {tags.length > 0 && (
+              <button onClick={() => setJournalFilterTab('tag')}
+                className={`px-3 py-1.5 text-small rounded-t-btn transition -mb-px ${journalFilterTab === 'tag' ? 'border-b-2 border-primary text-primary font-medium' : 'text-text-secondary hover:text-text-primary'}`}>
+                标签{tagFilter.length > 0 && <span className="ml-1 bg-primary text-white text-[10px] px-1.5 py-0.5 rounded-full">{tagFilter.length}</span>}
+              </button>
+            )}
+          </div>
+          {journalFilterTab === 'time' ? (
+            <TimeFilterBar value={entryTimeFilter} onChange={setEntryTimeFilter} options={TIME_FILTER_OPTIONS} />
+          ) : tags.length > 0 ? (
+            <div className="flex gap-1.5 flex-wrap">
+              {tags.map((tag) => (
+                <button key={tag.id} onClick={() => setTagFilter((prev) => prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id])}
+                  className={`px-2.5 py-1 rounded-full text-small transition ${
+                    tagFilter.includes(tag.id) ? 'text-white shadow-sm' : 'bg-surface-hover text-text-secondary hover:bg-border'
+                  }`}
+                  style={tagFilter.includes(tag.id) ? { backgroundColor: tag.color } : undefined}>
+                  {tag.name}
+                </button>
+              ))}
+              {tagFilter.length > 0 && <button onClick={() => setTagFilter([])} className="text-caption text-primary hover:underline">清除</button>}
+            </div>
+          ) : null}
+          {Object.entries(
+            Object.fromEntries(
+              Object.entries(grouped).map(([month, monthEntries]) => [month, filterEntriesByTime(monthEntries, entryTimeFilter).filter((e: JournalEntry) => tagFilter.length === 0 || (e.tags || []).some((tid: string) => tagFilter.includes(tid)))])
+            )
+          )
+            .filter(([, entries]) => (entries as JournalEntry[]).length > 0)
             .sort(([a], [b]) => b.localeCompare(a))
             .map(([month, monthEntries]) => (
               <div key={month}>
-                <h4 className="text-h3 text-text-secondary mb-3 flex items-center gap-2">
-                  <Calendar size={18} />
+                <h4
+                  className="text-h3 text-text-secondary mb-3 flex items-center gap-2 cursor-pointer hover:text-text-primary transition-colors select-none"
+                  onClick={() => setCollapsedMonths((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(month)) next.delete(month); else next.add(month);
+                    return next;
+                  })}
+                >
+                  {collapsedMonths.has(month) ? <CaretRight weight="bold" size={18} /> : <CaretDown size={18} />}
+                  <Calendar weight="duotone" size={18} />
                   {formatMonth(month)}
+                  <span className="text-small text-text-secondary font-normal">({(monthEntries as JournalEntry[]).length}篇)</span>
                 </h4>
-                <div className="space-y-3">
+                {!collapsedMonths.has(month) && <div className="space-y-3">
                   {monthEntries.map((entry) => {
                     const mood = MOOD_MAP[entry.mood];
                     const isExpanded = expandedId === entry.id;
                     return (
-                      <div key={entry.id} className={`card hover:shadow-card-hover transition-all ${entry.date === today ? 'ring-2 ring-primary/30 bg-primary/5' : ''}`}>
+                      <div key={entry.id} className={`card hover:shadow-card-hover transition ${entry.date === today ? 'ring-2 ring-primary/30 bg-primary/5' : ''}`}>
                         <div
                           className="flex items-center justify-between cursor-pointer"
                           onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                         >
                           <div className="flex items-center gap-3">
                             <span className="text-2xl">
-                              {entry.weather ? WEATHER_MAP[entry.weather]?.emoji : '📝'}
+                              {entry.weather ? (() => { const I = WEATHER_MAP[entry.weather!]!.icon; return <I size={14} />; })() : (() => { const I = MOOD_ICON.okay; return <I size={14} />; })()}
                             </span>
                             <div>
                               <p className="text-body font-medium flex items-center gap-2">
@@ -506,7 +605,7 @@ export default function Journal() {
                           <div className="flex items-center gap-2">
                             {entry.suggestions.length > 0 && (
                               <span className="text-small text-primary flex items-center gap-1">
-                                <Lightbulb size={14} />
+                                <Lightbulb weight="duotone" size={14} />
                                 {entry.suggestions.length}
                               </span>
                             )}
@@ -514,26 +613,24 @@ export default function Journal() {
                               onClick={(e) => { e.stopPropagation(); handleEdit(entry); }}
                               className="p-1.5 rounded hover:bg-surface-hover text-text-secondary hover:text-primary"
                             >
-                              <Edit3 size={16} />
+                              <PencilSimple weight="bold" size={16} />
                             </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); handleDelete(entry.id); }}
                               className="p-1.5 rounded hover:bg-surface-hover text-text-secondary hover:text-danger"
                             >
-                              <Trash2 size={16} />
+                              <Trash weight="bold" size={16} />
                             </button>
-                            {isExpanded ? <ChevronUp size={18} className="text-text-secondary" /> : <ChevronDown size={18} className="text-text-secondary" />}
+                            {isExpanded ? <CaretUp weight="bold" size={18} className="text-text-secondary" /> : <CaretDown size={18} className="text-text-secondary" />}
                           </div>
                         </div>
 
                         {isExpanded && (
                           <div className="mt-4 pt-4 border-t border-border space-y-3">
                             <div className="flex items-center gap-2">
-                              <span className="text-2xl">{mood.emoji}</span>
+                              <span className="text-2xl"><InlineIcon icon={mood.icon} size={22} /></span>
                               <span className="text-body font-medium">{mood.label}</span>
-                              {entry.weather && (
-                                <span className="text-lg">{WEATHER_MAP[entry.weather]?.emoji}</span>
-                              )}
+                              {entry.weather && WEATHER_MAP[entry.weather] ? <InlineIcon icon={WEATHER_MAP[entry.weather]!.icon} size={18} /> : null}
                             </div>
                             {/* Daily summary */}
                             {(entry.summary || summaryByDate[entry.date]?.summary) ? (
@@ -550,20 +647,22 @@ export default function Journal() {
                               return (
                                 <div className="bg-surface-hover rounded-card p-3">
                                   <p className="text-caption text-text-secondary font-medium mb-2 flex items-center gap-1">
-                                    <Clock size={13} />
+                                    <Clock weight="bold" size={13} />
                                     今日任务 ({done}/{dateTasks.length})
                                   </p>
                                   <div className="space-y-0.5">
                                     {dateTasks.map((t) => (
                                       <div key={t.id} className="flex items-center gap-2 text-small">
                                         {t.status === 'completed' ? (
-                                          <CheckCircle2 size={13} className="text-success flex-shrink-0" />
+                                          <CheckCircle weight="duotone" size={13} className="text-success flex-shrink-0" />
                                         ) : t.status === 'skipped' ? (
-                                          <SkipForward size={13} className="text-warning flex-shrink-0" />
+                                          <SkipForward weight="bold" size={13} className="text-warning flex-shrink-0" />
+                                        ) : t.status === 'in-progress' ? (
+                                          <Clock weight="bold" size={13} className="text-primary flex-shrink-0" />
                                         ) : (
-                                          <Circle size={13} className="text-text-secondary flex-shrink-0" />
+                                          <Circle weight="duotone" size={13} className="text-text-secondary flex-shrink-0" />
                                         )}
-                                        <span className={`flex-1 truncate ${t.status === 'completed' ? 'line-through text-text-secondary' : ''}`}>
+                                        <span className={`flex-1 truncate ${t.status === 'completed' || t.status === 'skipped' ? 'line-through text-text-secondary' : ''}`}>
                                           {t.title}
                                         </span>
                                         <span className="text-text-secondary flex-shrink-0">{formatTime(t.estimatedMinutes)}</span>
@@ -596,10 +695,39 @@ export default function Journal() {
                                 </div>
                               );
                             })()}
+                            {/* Related clips */}
+                            {(() => {
+                              const relatedClips = clips.filter((c) => c.relatedJournalDate === entry.date);
+                              if (relatedClips.length === 0) return null;
+                              return (
+                                <div>
+                                  <p className="text-caption font-medium text-primary mb-2 flex items-center gap-1">
+                                    <Paperclip weight="duotone" size={13} />
+                                    今日剪藏 ({relatedClips.length})
+                                  </p>
+                                  <div className="space-y-1.5">
+                                    {relatedClips.map((clip) => (
+                                      <div key={clip.id} className="flex items-center gap-2 text-small bg-primary/5 rounded-btn px-3 py-2">
+                                        {clip.favicon ? (
+                                          <img src={clip.favicon} alt="" className="w-4 h-4 rounded flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                        ) : (
+                                          <Paperclip weight="duotone" size={13} className="text-text-secondary flex-shrink-0" />
+                                        )}
+                                        <span className="flex-1 truncate">{clip.title || clip.url}</span>
+                                        <a href={clip.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex-shrink-0">
+                                          <ArrowSquareOut weight="duotone" size={13} />
+                                        </a>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             {entry.suggestions.length > 0 && (
                               <div>
                                 <p className="text-caption font-medium text-primary mb-2 flex items-center gap-1">
-                                  <Lightbulb size={14} />
+                                  <Lightbulb weight="duotone" size={14} />
                                   优化建议
                                 </p>
                                 <ul className="space-y-1.5">
@@ -617,57 +745,114 @@ export default function Journal() {
                       </div>
                     );
                   })}
-                </div>
+                </div>}
               </div>
             ))}
         </div>
       ) : (
         /* Mood view */
-        <div className="space-y-2">
-          {entries.map((entry) => {
-            const mood = MOOD_MAP[entry.mood];
-            const summary = summaryByDate[entry.date];
-            const displayText = entry.summary || summary?.summary || entry.content || '';
-            return (
-              <div
-                key={entry.id}
-                className="card hover:shadow-card-hover cursor-pointer transition-all hover:-translate-y-0.5"
-                onClick={() => handleEdit(entry)}
-              >
-                <div className="flex items-center gap-3">
-                  {/* Mood emoji */}
-                  <span className="text-2xl flex-shrink-0">{mood.emoji}</span>
-                  {/* Date */}
-                  <span className="text-small text-text-secondary flex-shrink-0 font-mono w-14">
-                    {format(parseISO(entry.date), 'MM.dd')}
-                  </span>
-                  {/* Summary / content preview */}
-                  <span className="text-body text-text-secondary truncate flex-1 min-w-0">
-                    {displayText || '（无内容）'}
-                  </span>
-                  {/* Weather */}
-                  {entry.weather && (
-                    <span className="text-base flex-shrink-0">{WEATHER_MAP[entry.weather]?.emoji}</span>
+        <div className="space-y-5">
+          <div className="flex items-center gap-1 border-b border-border pb-0">
+            <button onClick={() => setJournalFilterTab('time')}
+              className={`px-3 py-1.5 text-small rounded-t-btn transition -mb-px ${journalFilterTab === 'time' ? 'border-b-2 border-primary text-primary font-medium' : 'text-text-secondary hover:text-text-primary'}`}>
+              时间
+            </button>
+            {tags.length > 0 && (
+              <button onClick={() => setJournalFilterTab('tag')}
+                className={`px-3 py-1.5 text-small rounded-t-btn transition -mb-px ${journalFilterTab === 'tag' ? 'border-b-2 border-primary text-primary font-medium' : 'text-text-secondary hover:text-text-primary'}`}>
+                标签{tagFilter.length > 0 && <span className="ml-1 bg-primary text-white text-[10px] px-1.5 py-0.5 rounded-full">{tagFilter.length}</span>}
+              </button>
+            )}
+          </div>
+          {journalFilterTab === 'time' ? (
+            <TimeFilterBar value={entryTimeFilter} onChange={setEntryTimeFilter} options={TIME_FILTER_OPTIONS} />
+          ) : tags.length > 0 ? (
+            <div className="flex gap-1.5 flex-wrap">
+              {tags.map((tag) => (
+                <button key={tag.id} onClick={() => setTagFilter((prev) => prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id])}
+                  className={`px-2.5 py-1 rounded-full text-small transition ${
+                    tagFilter.includes(tag.id) ? 'text-white shadow-sm' : 'bg-surface-hover text-text-secondary hover:bg-border'
+                  }`}
+                  style={tagFilter.includes(tag.id) ? { backgroundColor: tag.color } : undefined}>
+                  {tag.name}
+                </button>
+              ))}
+              {tagFilter.length > 0 && <button onClick={() => setTagFilter([])} className="text-caption text-primary hover:underline">清除</button>}
+            </div>
+          ) : null}
+          {(() => {
+            const moodFiltered = filterEntriesByTime(entries, entryTimeFilter)
+              .filter((e) => tagFilter.length === 0 || (e.tags || []).some((tid: string) => tagFilter.includes(tid)));
+            const moodGrouped: Record<string, JournalEntry[]> = {};
+            moodFiltered.forEach((e) => {
+              const m = e.date.substring(0, 7);
+              if (!moodGrouped[m]) moodGrouped[m] = [];
+              moodGrouped[m].push(e);
+            });
+            if (Object.keys(moodGrouped).length === 0) return <p className="text-caption text-text-secondary text-center py-8">没有符合条件的日记</p>;
+            return Object.entries(moodGrouped)
+              .sort(([a], [b]) => b.localeCompare(a))
+              .map(([month, monthEntries]) => (
+                <div key={month}>
+                  <h4
+                    className="text-h3 text-text-secondary mb-3 flex items-center gap-2 cursor-pointer hover:text-text-primary transition-colors select-none"
+                    onClick={() => setCollapsedMonths((prev) => {
+                      const next = new Set(prev);
+                      if (next.has('mood-' + month)) next.delete('mood-' + month);
+                      else next.add('mood-' + month);
+                      return next;
+                    })}
+                  >
+                    {collapsedMonths.has('mood-' + month) ? <CaretRight weight="bold" size={18} /> : <CaretDown size={18} />}
+                    <Calendar weight="duotone" size={18} />
+                    {formatMonth(month)}
+                    <span className="text-small text-text-secondary font-normal">({monthEntries.length}篇)</span>
+                  </h4>
+                  {!collapsedMonths.has('mood-' + month) && (
+                    <div className="space-y-2">
+                      {monthEntries.map((entry) => {
+                        const mood = MOOD_MAP[entry.mood];
+                        const summary = summaryByDate[entry.date];
+                        const displayText = entry.summary || summary?.summary || entry.content || '';
+                        return (
+                          <div
+                            key={entry.id}
+                            className="card hover:shadow-card-hover cursor-pointer transition hover:-translate-y-0.5"
+                            onClick={() => handleEdit(entry)}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl flex-shrink-0"><InlineIcon icon={mood.icon} size={22} /></span>
+                              <span className="text-small text-text-secondary flex-shrink-0 w-10 font-medium">{mood.label}</span>
+                              <span className="text-small text-text-secondary flex-shrink-0 font-mono w-14">
+                                {format(parseISO(entry.date), 'MM.dd')}
+                              </span>
+                              {entry.weather && WEATHER_MAP[entry.weather] ? <InlineIcon icon={WEATHER_MAP[entry.weather]!.icon} size={18} /> : null}
+                              <span className="text-body text-text-secondary truncate flex-1 min-w-0">
+                                {displayText || '（无内容）'}
+                              </span>
+                              <div className="flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => handleEdit(entry)}
+                                  className="p-1 rounded hover:bg-surface-hover text-text-secondary hover:text-primary"
+                                >
+                                  <PencilSimple weight="bold" size={13} />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(entry.id)}
+                                  className="p-1 rounded hover:bg-surface-hover text-text-secondary hover:text-danger"
+                                >
+                                  <Trash weight="bold" size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
-                  {/* Actions */}
-                  <div className="flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => handleEdit(entry)}
-                      className="p-1 rounded hover:bg-surface-hover text-text-secondary hover:text-primary"
-                    >
-                      <Edit3 size={13} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(entry.id)}
-                      className="p-1 rounded hover:bg-surface-hover text-text-secondary hover:text-danger"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
                 </div>
-              </div>
-            );
-          })}
+              ));
+          })()}
         </div>
       )}
 
@@ -702,6 +887,28 @@ export default function Journal() {
             />
           </div>
 
+          {/* Tags */}
+          {tags.length > 0 && (
+            <div>
+              <label className="text-small font-medium text-text-secondary block mb-1">标签</label>
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => setEditTags((prev) => prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id])}
+                    className={`text-small px-2 py-0.5 rounded-full transition ${
+                      editTags.includes(tag.id) ? 'text-white shadow-sm' : 'bg-surface-hover text-text-secondary hover:bg-border'
+                    }`}
+                    style={editTags.includes(tag.id) ? { backgroundColor: tag.color } : undefined}
+                  >
+                    {tag.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Images */}
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -716,22 +923,22 @@ export default function Journal() {
               <div className="flex gap-2 flex-wrap mb-2">
                 {editImages.map((url, i) => (
                   <div key={i} className="relative group">
-                    <img src={url} className="w-16 h-16 object-cover rounded-lg" />
+                    <img src={url} alt={`附件图片 ${i + 1}`} className="w-16 h-16 object-cover rounded-lg" />
                     <button
                       type="button"
                       onClick={() => setEditImages(editImages.filter((_, j) => j !== i))}
                       className="absolute -top-1 -right-1 p-0.5 bg-black/60 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                     >
-                      <X size={12} />
+                      <X weight="bold" size={12} />
                     </button>
                   </div>
                 ))}
               </div>
             )}
             <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn bg-surface-hover hover:bg-border cursor-pointer transition-colors text-small">
-              <ImagePlus size={15} />
+              <CameraPlus weight="bold" size={15} />
               添加照片
-              <input type="file" accept="image/*" multiple className="hidden"
+              <input autoComplete="off" type="file" accept="image/*" multiple className="hidden"
                 onChange={async (e) => {
                   const files = e.target.files;
                   if (!files) return;
@@ -758,7 +965,7 @@ export default function Journal() {
                       <div key={i} className="relative">
                         <img
                           src={img.url} alt={img.title}
-                          className={`w-14 h-14 object-cover rounded-lg cursor-pointer border-2 transition-all ${
+                          className={`w-14 h-14 object-cover rounded-lg cursor-pointer border-2 transition ${
                             editImages.includes(img.url) ? 'border-primary opacity-100' : 'border-transparent opacity-50 hover:opacity-80'
                           }`}
                           onClick={() => {
@@ -777,60 +984,42 @@ export default function Journal() {
             })()}
           </div>
 
-          {/* Mood + Weather — collapsible */}
+          {/* Mood */}
           <div>
-            <button
-              type="button"
-              onClick={() => setEditShowMoodWeather(!editShowMoodWeather)}
-              className="flex items-center gap-2 text-small font-medium text-text-secondary hover:text-text transition-colors"
-            >
-              <ChevronDown size={14} className={`transition-transform ${editShowMoodWeather ? 'rotate-180' : ''}`} />
-              心情与天气（可选）
-              {(editMood || editWeather) && (
-                <span className="text-text-secondary font-normal">
-                  — {MOOD_MAP[editMood]?.emoji} {editWeather ? WEATHER_MAP[editWeather]?.emoji : ''}
-                </span>
-              )}
-            </button>
-            {editShowMoodWeather && (
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <div>
-                  <label className="text-small font-medium text-text-secondary block mb-1.5">心情</label>
-                  <div className="flex gap-1">
-                    {MOODS.map((m) => (
-                      <button type="button" key={m.value} onClick={() => setEditMood(m.value)}
-                        className={`flex flex-col items-center gap-0.5 p-2 rounded-lg border-1.5 transition-all flex-1 ${
-                          editMood === m.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary-light'
-                        }`}>
-                        <span className="text-lg">{m.emoji}</span>
-                        <span className="text-[10px] text-text-secondary">{m.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-small font-medium text-text-secondary block mb-1.5">天气</label>
-                  <div className="grid grid-cols-3 gap-1">
-                    {WEATHERS.map((w) => (
-                      <button type="button" key={w.value} onClick={() => setEditWeather(editWeather === w.value ? null : w.value)}
-                        className={`flex items-center gap-1 p-1.5 rounded-lg border-1.5 transition-all ${
-                          editWeather === w.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary-light'
-                        }`}>
-                        <span className="text-base">{w.emoji}</span>
-                        <span className="text-[10px] text-text-secondary">{w.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+            <label className="text-small font-medium text-text-secondary block mb-1.5">心情</label>
+            <div className="flex gap-1">
+              {MOODS.map((m) => (
+                <button type="button" key={m.value} onClick={() => setEditMood(m.value)}
+                  className={`flex flex-col items-center gap-0.5 p-2 rounded-lg border-2 transition flex-1 ${
+                    editMood === m.value ? 'border-primary bg-primary/10' : 'border-border hover:border-primary-light'
+                  }`}>
+                  <span className="text-lg"><InlineIcon icon={m.icon} size={22} /></span>
+                  <span className="text-[10px] text-text-secondary">{m.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Weather */}
+          <div>
+            <label className="text-small font-medium text-text-secondary block mb-1.5">天气</label>
+            <div className="grid grid-cols-3 gap-1">
+              {WEATHERS.map((w) => (
+                <button type="button" key={w.value} onClick={() => setEditWeather(editWeather === w.value ? null : w.value)}
+                  className={`flex items-center gap-1 p-1.5 rounded-lg border-2 transition ${
+                    editWeather === w.value ? 'border-primary bg-primary/10' : 'border-border hover:border-primary-light'
+                  }`}>
+                  <span className="text-base"><InlineIcon icon={w.icon} size={22} /></span>
+                  <span className="text-[10px] text-text-secondary">{w.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {error && <p className="text-small text-danger">{error}</p>}
           <div className="flex justify-end gap-3 pt-2 border-t border-border">
             <button type="button" className="btn-secondary" onClick={() => setEditingEntry(null)}>取消</button>
             <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? '保存中...' : '保存'}
+              {saving ? '保存中…' : '保存'}
             </button>
           </div>
         </form>
@@ -839,7 +1028,7 @@ export default function Journal() {
       {/* Image Preview */}
       {previewUrl && (
         <div
-          className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center cursor-pointer"
+          className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-md flex items-center justify-center cursor-pointer"
           onClick={() => setPreviewUrl(null)}
         >
           <img src={previewUrl} alt="预览" className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />
@@ -905,6 +1094,28 @@ export default function Journal() {
             />
           </div>
 
+          {/* Tags */}
+          {tags.length > 0 && (
+            <div>
+              <label className="text-small font-medium text-text-secondary block mb-1">标签</label>
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => setNewTags((prev) => prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id])}
+                    className={`text-small px-2 py-0.5 rounded-full transition ${
+                      newTags.includes(tag.id) ? 'text-white shadow-sm' : 'bg-surface-hover text-text-secondary hover:bg-border'
+                    }`}
+                    style={newTags.includes(tag.id) ? { backgroundColor: tag.color } : undefined}
+                  >
+                    {tag.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Images */}
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -919,22 +1130,22 @@ export default function Journal() {
               <div className="flex gap-2 flex-wrap mb-2">
                 {newImages.map((url, i) => (
                   <div key={i} className="relative group">
-                    <img src={url} className="w-16 h-16 object-cover rounded-lg" />
+                    <img src={url} alt={`附件图片 ${i + 1}`} className="w-16 h-16 object-cover rounded-lg" />
                     <button
                       type="button"
                       onClick={() => setNewImages(newImages.filter((_, j) => j !== i))}
                       className="absolute -top-1 -right-1 p-0.5 bg-black/60 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                     >
-                      <X size={12} />
+                      <X weight="bold" size={12} />
                     </button>
                   </div>
                 ))}
               </div>
             )}
             <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn bg-surface-hover hover:bg-border cursor-pointer transition-colors text-small">
-              <ImagePlus size={15} />
+              <CameraPlus weight="bold" size={15} />
               添加照片
-              <input type="file" accept="image/*" multiple className="hidden"
+              <input autoComplete="off" type="file" accept="image/*" multiple className="hidden"
                 onChange={async (e) => {
                   const files = e.target.files;
                   if (!files) return;
@@ -961,7 +1172,7 @@ export default function Journal() {
                       <div key={i} className="relative">
                         <img
                           src={img.url} alt={img.title}
-                          className={`w-14 h-14 object-cover rounded-lg cursor-pointer border-2 transition-all ${
+                          className={`w-14 h-14 object-cover rounded-lg cursor-pointer border-2 transition ${
                             newImages.includes(img.url) ? 'border-primary opacity-100' : 'border-transparent opacity-50 hover:opacity-80'
                           }`}
                           onClick={() => {
@@ -982,58 +1193,43 @@ export default function Journal() {
 
           {/* Mood + Weather — collapsible */}
           <div>
-            <button
-              type="button"
-              onClick={() => setNewShowMoodWeather(!newShowMoodWeather)}
-              className="flex items-center gap-2 text-small font-medium text-text-secondary hover:text-text transition-colors"
-            >
-              <ChevronDown size={14} className={`transition-transform ${newShowMoodWeather ? 'rotate-180' : ''}`} />
-              心情与天气（可选）
-              {(newMood || newWeather) && (
-                <span className="text-text-secondary font-normal">
-                  — {MOOD_MAP[newMood]?.emoji} {newWeather ? WEATHER_MAP[newWeather]?.emoji : ''}
-                </span>
-              )}
-            </button>
-            {newShowMoodWeather && (
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <div>
-                  <label className="text-small font-medium text-text-secondary block mb-1.5">心情</label>
-                  <div className="flex gap-1">
-                    {MOODS.map((m) => (
-                      <button type="button" key={m.value} onClick={() => setNewMood(m.value)}
-                        className={`flex flex-col items-center gap-0.5 p-2 rounded-lg border-1.5 transition-all flex-1 ${
-                          newMood === m.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary-light'
-                        }`}>
-                        <span className="text-lg">{m.emoji}</span>
-                        <span className="text-[10px] text-text-secondary">{m.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-small font-medium text-text-secondary block mb-1.5">天气</label>
-                  <div className="grid grid-cols-3 gap-1">
-                    {WEATHERS.map((w) => (
-                      <button type="button" key={w.value} onClick={() => setNewWeather(newWeather === w.value ? null : w.value)}
-                        className={`flex items-center gap-1 p-1.5 rounded-lg border-1.5 transition-all ${
-                          newWeather === w.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary-light'
-                        }`}>
-                        <span className="text-base">{w.emoji}</span>
-                        <span className="text-[10px] text-text-secondary">{w.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+          {/* Mood */}
+          <div>
+            <label className="text-small font-medium text-text-secondary block mb-1.5">心情</label>
+            <div className="flex gap-1">
+              {MOODS.map((m) => (
+                <button type="button" key={m.value} onClick={() => setNewMood(m.value)}
+                  className={`flex flex-col items-center gap-0.5 p-2 rounded-lg border-2 transition flex-1 ${
+                    newMood === m.value ? 'border-primary bg-primary/10' : 'border-border hover:border-primary-light'
+                  }`}>
+                  <span className="text-lg"><InlineIcon icon={m.icon} size={22} /></span>
+                  <span className="text-[10px] text-text-secondary">{m.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Weather */}
+          <div>
+            <label className="text-small font-medium text-text-secondary block mb-1.5">天气</label>
+            <div className="grid grid-cols-3 gap-1">
+              {WEATHERS.map((w) => (
+                <button type="button" key={w.value} onClick={() => setNewWeather(newWeather === w.value ? null : w.value)}
+                  className={`flex items-center gap-1 p-1.5 rounded-lg border-2 transition ${
+                    newWeather === w.value ? 'border-primary bg-primary/10' : 'border-border hover:border-primary-light'
+                  }`}>
+                  <span className="text-base"><InlineIcon icon={w.icon} size={22} /></span>
+                  <span className="text-[10px] text-text-secondary">{w.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           </div>
 
           {error && <p className="text-small text-danger">{error}</p>}
           <div className="flex justify-end gap-3 pt-2 border-t border-border">
             <button type="button" className="btn-secondary" onClick={() => setShowCreate(false)}>取消</button>
             <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? '保存中...' : '保存'}
+              {saving ? '保存中…' : '保存'}
             </button>
           </div>
         </form>
@@ -1044,7 +1240,7 @@ export default function Journal() {
 
 function GalleryCard({ entry, mood, allImages, showMood, showWeather, showSummary, showImages, combineMode, isSelected, onToggleSelect, onEdit, onPreview, onExport }: {
   entry: JournalEntry;
-  mood: { emoji: string; label: string };
+  mood: { icon: AppIcon; label: string };
   allImages: string[];
   showMood: boolean;
   showWeather: boolean;
@@ -1073,13 +1269,13 @@ function GalleryCard({ entry, mood, allImages, showMood, showWeather, showSummar
 
   return (
     <div
-      className={`card overflow-hidden hover:shadow-card-hover cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col group relative ${isSelected ? 'ring-2 ring-primary' : ''}`}
+      className={`card overflow-hidden hover:shadow-card-hover cursor-pointer transition hover:-translate-y-0.5 flex flex-col group relative ${isSelected ? 'ring-2 ring-primary' : ''}`}
       onClick={combineMode ? onToggleSelect : onEdit}
     >
       {/* Selection checkbox in combine mode */}
       {combineMode && (
         <div className="absolute bottom-3 right-3 z-10">
-          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${
             isSelected ? 'bg-primary border-primary text-white' : 'border-white/60 bg-black/20'
           }`}>
             {isSelected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
@@ -1095,13 +1291,13 @@ function GalleryCard({ entry, mood, allImages, showMood, showWeather, showSummar
             className="w-full h-full object-cover cursor-pointer"
             onClick={(e) => { e.stopPropagation(); onPreview(currentImg); }}
           />
-          {/* Export button — top right, visible on hover */}
+          {/* Export button — always visible on mobile, hover on desktop */}
           <button
             onClick={(e) => { e.stopPropagation(); onExport(); }}
-            className="absolute top-1.5 right-1.5 p-1.5 bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60"
+            className="absolute top-1.5 right-1.5 p-1.5 bg-black/40 text-white rounded-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity hover:bg-black/60"
             title="导出此日记海报"
           >
-            <Download size={13} />
+            <Download weight="bold" size={13} />
           </button>
           {allImages.length > 1 && (
             <>
@@ -1109,19 +1305,19 @@ function GalleryCard({ entry, mood, allImages, showMood, showWeather, showSummar
                 onClick={prevImg}
                 className="absolute left-1 top-1/2 -translate-y-1/2 p-1 bg-black/30 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/50"
               >
-                <ChevronLeft size={14} />
+                <CaretLeft weight="bold" size={14} />
               </button>
               <button
                 onClick={nextImg}
                 className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-black/30 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/50"
               >
-                <ChevronRight size={14} />
+                <CaretRight weight="bold" size={14} />
               </button>
               <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1">
                 {allImages.map((_, i) => (
                   <span
                     key={i}
-                    className={`w-1.5 h-1.5 rounded-full transition-all ${
+                    className={`w-1.5 h-1.5 rounded-full transition ${
                       i === imgIdx ? 'bg-white scale-110' : 'bg-white/40'
                     }`}
                   />
@@ -1141,10 +1337,8 @@ function GalleryCard({ entry, mood, allImages, showMood, showWeather, showSummar
         {/* Mood + Weather row */}
         {(showMood || showWeather) && (
           <div className="flex items-center gap-2">
-            {showMood && <span className="text-xl">{mood.emoji}</span>}
-            {showWeather && entry.weather && (
-              <span className="text-base">{WEATHER_MAP[entry.weather]?.emoji}</span>
-            )}
+            {showMood && <span className="text-xl"><InlineIcon icon={mood.icon} size={22} /></span>}
+            {showWeather && entry.weather && WEATHER_MAP[entry.weather] ? <InlineIcon icon={WEATHER_MAP[entry.weather]!.icon} size={16} /> : null}
           </div>
         )}
 
@@ -1155,13 +1349,13 @@ function GalleryCard({ entry, mood, allImages, showMood, showWeather, showSummar
           </p>
         )}
 
-        {/* Export button for cards without hero image — visible on hover */}
+        {/* Export button for cards without hero image — always visible on mobile */}
         {!hasImages && (
           <button
             onClick={(e) => { e.stopPropagation(); onExport(); }}
-            className="text-small text-primary hover:underline flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="text-small text-primary hover:underline flex items-center gap-1 mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
           >
-            <Download size={12} />导出海报
+            <Download weight="bold" size={12} />导出海报
           </button>
         )}
       </div>
