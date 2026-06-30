@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { useUIStore } from '@/stores/uiStore';
-import { Gauge, Target, ChartBar, BookOpen, MagnifyingGlass, Gear, CaretLeft, CaretRight, Paperclip, ListChecks } from '@phosphor-icons/react';
+import { useAuth } from '@/lib/auth';
+import { Gauge, Target, ChartBar, BookOpen, MagnifyingGlass, Gear, CaretLeft, CaretRight, Paperclip, ListChecks, SignOut, User } from '@phosphor-icons/react';
 
 const navItems = [
   { to: '/', icon: Gauge, label: '今日看板' },
@@ -15,8 +16,13 @@ const navItems = [
 
 export default function Sidebar() {
   const location = useLocation();
+  const { user, signOut } = useAuth();
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
+
+  const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
+  const displayName = user?.user_metadata?.full_name as string | undefined ?? user?.user_metadata?.name as string | undefined;
+  const email = user?.email;
 
   return (
     <aside className={`fixed left-0 top-0 h-full bg-surface border-r border-border flex flex-col z-10 transition duration-200 ${
@@ -59,6 +65,56 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* User section */}
+      <div className={`border-t border-border ${collapsed ? 'px-2' : 'px-3'} py-3`}>
+        {collapsed ? (
+          <div className="flex justify-center">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt=""
+                className="w-8 h-8 rounded-full border border-border"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <User size={16} className="text-primary" />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt=""
+                className="w-8 h-8 rounded-full border border-border flex-shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <User size={16} className="text-primary" />
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              {displayName && (
+                <p className="text-small font-medium text-text-primary truncate">{displayName}</p>
+              )}
+              {email && (
+                <p className="text-[10px] text-text-secondary truncate">{email}</p>
+              )}
+            </div>
+            <button
+              onClick={signOut}
+              className="flex-shrink-0 p-1 rounded text-text-secondary hover:text-danger hover:bg-danger/5 transition-colors"
+              title="退出登录"
+            >
+              <SignOut size={14} />
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Toggle button */}
       <div className={`border-t border-border ${collapsed ? 'px-2' : 'px-5'} py-4`}>

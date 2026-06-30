@@ -214,7 +214,7 @@ export default function Clips() {
   if (loading) return <div className="max-w-2xl mx-auto p-4"><SkeletonList count={5} /></div>;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {/* Header + Add Form */}
       <div className="card card-glass">
         <h3 className="text-h3 flex items-center gap-2 mb-4">

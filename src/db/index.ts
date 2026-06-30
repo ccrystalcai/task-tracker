@@ -185,6 +185,20 @@ export class TaskTrackerDB extends Dexie {
         if (!entry.tags) entry.tags = [];
       });
     });
+
+    this.version(13).stores({
+      goals: 'id, status',
+      tasks: 'id, goalId, dueDate, status, priority, *tags',
+      taskRecords: 'id, taskId, date',
+      journalEntries: 'id, date, *tags',
+      dailySummaries: 'id, date',
+      tags: 'id, name, parentId',
+      focusSessions: 'id, taskId, date',
+      goalTemplates: 'id',
+      clips: 'id, *tags, createdAt',
+    }).upgrade(async (_tx) => {
+      // placeholder — calendarEventId removed
+    });
   }
 }
 

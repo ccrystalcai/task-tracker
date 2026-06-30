@@ -5,7 +5,8 @@ import { useTaskStore } from '@/stores/taskStore';
 import { useGoalStore } from '@/stores/goalStore';
 import { useTimer } from '@/hooks/useTimer';
 import TaskHistoryModal from '@/components/task/TaskHistoryModal';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
+import { uploadImage } from '@/lib/storage';
 import { PRIORITY_LABEL, PRIORITY_COLOR } from '@/constants/priorities';
 import type { Task, Goal, Priority, RecurrenceType } from '@/db/schema';
 import { CheckCircle, Circle, SkipForward, Clock, Star, Calendar, CameraPlus, X, ClockCounterClockwise, Info, Play, Pause, FloppyDisk, Timer, CaretDown, CaretUp } from '@phosphor-icons/react';
@@ -145,26 +146,37 @@ export default function TaskDetailModal({ open, onClose, task, goal: _goal, onUp
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setUploading(true);
-    const newImages: string[] = [];
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setUploading(false); return; }
+
+    const newUrls: string[] = [];
     for (const file of Array.from(files)) {
-      const dataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-      newImages.push(dataUrl);
+      const url = await uploadImage(file);
+      if (url) newUrls.push(url);
     }
-    await db.tasks.update(task.id, {
-      images: [...(task.images || []), ...newImages],
-      updatedAt: new Date(),
-    });
+
+    if (newUrls.length > 0) {
+      await supabase
+        .from('tasks')
+        .update({ images: [...(task.images || []), ...newUrls], updated_at: new Date().toISOString() })
+        .eq('id', task.id)
+        .eq('user_id', session.user.id);
+    }
+
     setUploading(false);
     onUpdate?.();
   };
 
   const handleDeleteImage = async (index: number) => {
     const updated = task.images.filter((_, i) => i !== index);
-    await db.tasks.update(task.id, { images: updated, updatedAt: new Date() });
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    await supabase
+      .from('tasks')
+      .update({ images: updated, updated_at: new Date().toISOString() })
+      .eq('id', task.id)
+      .eq('user_id', session.user.id);
     onUpdate?.();
   };
 

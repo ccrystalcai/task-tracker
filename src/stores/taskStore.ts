@@ -1,8 +1,15 @@
 import { create } from 'zustand';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
 import { generateId } from '@/utils/id';
+import { toSnakeCase, mapRowsToCamelCase } from '@/lib/mapping';
 import { addDays, addWeeks, addMonths } from 'date-fns';
 import type { Task, Priority, RecurrenceType } from '@/db/schema';
+
+async function getUserId(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+  return session.user.id;
+}
 
 interface TaskState {
   tasks: Task[];
@@ -43,9 +50,23 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   fetchTasks: async () => {
     set({ loading: true });
-    let tasks = await db.tasks.toArray();
+    const uid = await getUserId();
 
-    // Auto-generate recurring instances
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('fetchTasks:', error.message);
+      set({ loading: false });
+      return;
+    }
+
+    let tasks = mapRowsToCamelCase<Task>(data ?? []);
+
+    // Auto-generate recurring instances (client-side logic, unchanged)
     const today = new Date().toISOString().split('T')[0];
     const newInstances: Task[] = [];
     const sourceTasks = tasks.filter((t) => t.recurrenceType !== 'none' && !t.sourceTaskId);
@@ -58,7 +79,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         .sort()
         .reverse()[0] || source.dueDate;
 
-      // If no instances exist yet, start from source.dueDate so the source is always just a template
       const startFrom = instances.length === 0
         ? source.dueDate
         : addToDate(latestDate, source.recurrenceType, source.recurrenceInterval);
@@ -68,7 +88,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       while (nextDate <= today) {
         if (source.recurrenceEndDate && nextDate > source.recurrenceEndDate) break;
 
-        // Skip if an instance already exists for this date
         if (instances.some((inst) => inst.dueDate === nextDate)) {
           nextDate = addToDate(nextDate, source.recurrenceType, source.recurrenceInterval);
           continue;
@@ -77,6 +96,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const now = new Date();
         const instance: Task = {
           id: generateId(),
+          userId: uid,
           goalId: source.goalId,
           title: source.title,
           description: source.description,
@@ -103,8 +123,23 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           createdAt: now,
           updatedAt: now,
         };
-        await db.tasks.put(instance);
-        newInstances.push(instance);
+
+        // Insert into Supabase — use upsert to handle unique constraint
+        const { error: insertErr } = await supabase
+          .from('tasks')
+          .insert(toSnakeCase(instance as unknown as Record<string, unknown>));
+
+        if (insertErr) {
+          // If duplicate, just skip (another device may have created it)
+          if (insertErr.code === '23505') {
+            nextDate = addToDate(nextDate, source.recurrenceType, source.recurrenceInterval);
+            continue;
+          }
+          console.error('fetchTasks auto-generate:', insertErr.message);
+        } else {
+          newInstances.push(instance);
+        }
+
         nextDate = addToDate(nextDate, source.recurrenceType, source.recurrenceInterval);
       }
     }
@@ -117,13 +152,27 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   fetchTasksByDate: async (date: string) => {
-    return db.tasks.where('dueDate').equals(date).toArray();
+    const uid = await getUserId();
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', uid)
+      .eq('due_date', date);
+
+    if (error) {
+      console.error('fetchTasksByDate:', error.message);
+      return [];
+    }
+
+    return mapRowsToCamelCase<Task>(data ?? []);
   },
 
   createTask: async (data) => {
+    const uid = await getUserId();
     const now = new Date();
     const task: Task = {
       id: generateId(),
+      userId: uid,
       goalId: data.goalId ?? null,
       title: data.title,
       description: data.description ?? '',
@@ -150,19 +199,42 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     };
-    await db.tasks.put(task);
+
+    const { error } = await supabase
+      .from('tasks')
+      .insert(toSnakeCase(task as unknown as Record<string, unknown>));
+
+    if (error) {
+      console.error('createTask:', error.message);
+      throw error;
+    }
+
     set((s) => ({ tasks: [...s.tasks, task] }));
     return task;
   },
 
   updateTask: async (id, data) => {
-    await db.tasks.update(id, { ...data, updatedAt: new Date() });
+    const uid = await getUserId();
+    const updateData = { ...data, updatedAt: new Date() };
+
+    const { error } = await supabase
+      .from('tasks')
+      .update(toSnakeCase(updateData as unknown as Record<string, unknown>))
+      .eq('id', id)
+      .eq('user_id', uid);
+
+    if (error) {
+      console.error('updateTask:', error.message);
+      return;
+    }
+
     set((s) => ({
-      tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...data, updatedAt: new Date() } : t)),
+      tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...updateData } : t)),
     }));
   },
 
   toggleTask: async (id) => {
+    const uid = await getUserId();
     const task = get().tasks.find((t) => t.id === id);
     if (!task) return;
 
@@ -172,13 +244,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         (t) => t.sourceTaskId === task.id && t.dueDate === task.dueDate,
       );
       if (child) {
-        // Toggle the child instance
         return get().toggleTask(child.id);
       }
+
       // No child exists yet — create one and complete it
       const now = new Date();
       const newChild: Task = {
         id: generateId(),
+        userId: uid,
         goalId: task.goalId,
         title: task.title,
         description: task.description,
@@ -205,7 +278,16 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         createdAt: now,
         updatedAt: now,
       };
-      await db.tasks.put(newChild);
+
+      const { error: childErr } = await supabase
+        .from('tasks')
+        .insert(toSnakeCase(newChild as unknown as Record<string, unknown>));
+
+      if (childErr) {
+        console.error('toggleTask create child:', childErr.message);
+        return;
+      }
+
       set((s) => ({ tasks: [...s.tasks, newChild] }));
 
       // Auto-create next instance
@@ -213,6 +295,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       if (!task.recurrenceEndDate || nextDate <= task.recurrenceEndDate) {
         const nextInstance: Task = {
           id: generateId(),
+          userId: uid,
           goalId: task.goalId,
           title: task.title,
           description: task.description,
@@ -239,15 +322,39 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           createdAt: now,
           updatedAt: now,
         };
-        await db.tasks.put(nextInstance);
-        set((s) => ({ tasks: [...s.tasks, nextInstance] }));
+
+        const { error: nextErr } = await supabase
+          .from('tasks')
+          .insert(toSnakeCase(nextInstance as unknown as Record<string, unknown>));
+
+        if (nextErr) {
+          console.error('toggleTask create next:', nextErr.message);
+        } else {
+          set((s) => ({ tasks: [...s.tasks, nextInstance] }));
+        }
       }
       return;
     }
 
+    // Regular toggle (non-recurring tasks or child instances)
     const newStatus = task.status === 'completed' ? 'pending' : 'completed';
     const completedAt = newStatus === 'completed' ? new Date() : null;
-    await db.tasks.update(id, { status: newStatus, completedAt, updatedAt: new Date() });
+
+    const { error } = await supabase
+      .from('tasks')
+      .update({
+        status: newStatus,
+        completed_at: completedAt?.toISOString() ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('user_id', uid);
+
+    if (error) {
+      console.error('toggleTask:', error.message);
+      return;
+    }
+
     set((s) => ({
       tasks: s.tasks.map((t) =>
         t.id === id ? { ...t, status: newStatus, completedAt, updatedAt: new Date() } : t,
@@ -272,6 +379,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       const now = new Date();
       const nextInstance: Task = {
         id: generateId(),
+        userId: uid,
         goalId: source.goalId,
         title: source.title,
         description: source.description,
@@ -298,20 +406,51 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         createdAt: now,
         updatedAt: now,
       };
-      await db.tasks.put(nextInstance);
+
+      const { error: nextErr } = await supabase
+        .from('tasks')
+        .insert(toSnakeCase(nextInstance as unknown as Record<string, unknown>));
+
+      if (nextErr) {
+        console.error('toggleTask create next instance:', nextErr.message);
+        return;
+      }
+
       set((s) => ({ tasks: [...s.tasks, nextInstance] }));
     }
   },
 
   deleteTask: async (id) => {
+    const uid = await getUserId();
+
     // Cascade-delete child instances for recurring source tasks
     const childIds = get().tasks
       .filter((t) => t.sourceTaskId === id)
       .map((t) => t.id);
+
     for (const cid of childIds) {
-      await db.tasks.delete(cid);
+      const { error: childErr } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', cid)
+        .eq('user_id', uid);
+
+      if (childErr) {
+        console.error('deleteTask cascade:', childErr.message);
+      }
     }
-    await db.tasks.delete(id);
+
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', uid);
+
+    if (error) {
+      console.error('deleteTask:', error.message);
+      return;
+    }
+
     set((s) => ({
       tasks: s.tasks.filter((t) => t.id !== id && !childIds.includes(t.id)),
     }));

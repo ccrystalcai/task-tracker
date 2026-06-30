@@ -1,9 +1,16 @@
 import { create } from 'zustand';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
 import type { JournalEntry, Mood } from '@/db/schema';
 import { generateId } from '@/utils/id';
+import { toCamelCase, mapRowsToCamelCase } from '@/lib/mapping';
 
 type WeatherType = 'sunny' | 'cloudy' | 'rainy' | 'stormy' | 'snowy' | 'windy' | null;
+
+async function getUserId(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+  return session.user.id;
+}
 
 interface JournalStore {
   entries: JournalEntry[];
@@ -30,33 +37,83 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
 
   fetchEntries: async () => {
     set({ loading: true });
-    const entries = await db.journalEntries.orderBy('date').reverse().toArray();
+    const uid = await getUserId();
+    const { data, error } = await supabase
+      .from('journal_entries')
+      .select('*')
+      .eq('user_id', uid)
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error('fetchEntries:', error.message);
+      set({ loading: false });
+      return;
+    }
+
+    const entries = mapRowsToCamelCase<JournalEntry>(data ?? []);
     set({ entries, loading: false });
   },
 
   getEntryByDate: async (date: string) => {
-    return db.journalEntries.where('date').equals(date).first();
+    const uid = await getUserId();
+    const { data, error } = await supabase
+      .from('journal_entries')
+      .select('*')
+      .eq('user_id', uid)
+      .eq('date', date)
+      .maybeSingle();
+
+    if (error) {
+      console.error('getEntryByDate:', error.message);
+      return undefined;
+    }
+
+    return data ? (toCamelCase(data) as unknown as JournalEntry) : undefined;
   },
 
   upsertEntry: async (data) => {
-    const existing = data.id
-      ? await db.journalEntries.get(data.id)
-      : await db.journalEntries.where('date').equals(data.date).first();
+    const uid = await getUserId();
 
-    if (existing) {
-      await db.journalEntries.update(existing.id, {
+    // Check if entry exists
+    let existingId = data.id;
+    if (!existingId) {
+      const { data: existing } = await supabase
+        .from('journal_entries')
+        .select('id')
+        .eq('user_id', uid)
+        .eq('date', data.date)
+        .maybeSingle();
+      existingId = existing?.id;
+    }
+
+    if (existingId) {
+      // Update existing entry
+      const updateData = {
         mood: data.mood,
-        weather: data.weather ?? existing.weather,
+        weather: data.weather ?? undefined,
         content: data.content,
-        summary: data.summary ?? existing.summary ?? '',
+        summary: data.summary ?? undefined,
         suggestions: data.suggestions,
-        images: data.images ?? existing.images ?? [],
-        tags: data.tags ?? existing.tags ?? [],
-        updatedAt: new Date(),
-      });
+        images: data.images ?? undefined,
+        tags: data.tags ?? undefined,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('journal_entries')
+        .update(updateData)
+        .eq('id', existingId)
+        .eq('user_id', uid);
+
+      if (error) {
+        console.error('upsertEntry update:', error.message);
+        return;
+      }
     } else {
-      await db.journalEntries.put({
+      // Insert new entry
+      const entry = {
         id: data.id || generateId(),
+        user_id: uid,
         date: data.date,
         mood: data.mood,
         weather: data.weather ?? null,
@@ -65,16 +122,36 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
         suggestions: data.suggestions,
         images: data.images ?? [],
         tags: data.tags ?? [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('journal_entries')
+        .insert(entry);
+
+      if (error) {
+        console.error('upsertEntry insert:', error.message);
+        return;
+      }
     }
 
     await get().fetchEntries();
   },
 
   deleteEntry: async (id: string) => {
-    await db.journalEntries.delete(id);
+    const uid = await getUserId();
+    const { error } = await supabase
+      .from('journal_entries')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', uid);
+
+    if (error) {
+      console.error('deleteEntry:', error.message);
+      return;
+    }
+
     await get().fetchEntries();
   },
 }));

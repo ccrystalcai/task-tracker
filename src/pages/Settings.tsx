@@ -1,20 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useUIStore } from '@/stores/uiStore';
 import { useTagStore } from '@/stores/tagStore';
-import { useTaskStore } from '@/stores/taskStore';
 import { themes } from '@/styles/themes';
 import { exportAllData, downloadJSON, importAllData } from '@/utils/export';
-import {
-  getClientId, setClientId, isConnected, disconnect,
-  requestAccessToken, fetchCalendars, createCalendarEvent,
-} from '@/utils/calendar';
 import type { ThemeName } from '@/styles/themes';
-import { Plus, Trash, PencilSimple, Check, X, Download, Upload, Calendar, Link, ArrowsClockwise, CaretDown, CaretRight, Cloud, CloudSlash, HardDrive } from '@phosphor-icons/react';
-import {
-  getStoredClientId, setStoredClientId, getStoredToken,
-  authorizeGoogleDrive, uploadToDrive, listBackups, disconnectDrive,
-} from '@/utils/googleDrive';
-import { getBackupSchedule, setBackupSchedule, markBackupDone, type BackupSchedule } from '@/utils/backupReminder';
+import { Plus, Trash, PencilSimple, Check, X, Download, Upload, CaretDown, CaretRight } from '@phosphor-icons/react';
 
 const TAG_COLORS = ['#0D9488', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
 
@@ -170,8 +160,6 @@ export default function Settings() {
   const { tags, fetchTags, createTag, updateTag, deleteTag, getTagTree, getTagDepth } = useTagStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const { tasks, fetchTasks } = useTaskStore();
-
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0]);
   const [newTagParentId, setNewTagParentId] = useState<string | null>(null);
@@ -180,26 +168,7 @@ export default function Settings() {
   const [editColor, setEditColor] = useState('');
   const [collapsedTags, setCollapsedTags] = useState<Set<string>>(new Set());
 
-  // Google Calendar
-  const [googleClientId, setGoogleClientId] = useState(getClientId());
-  const [calendarConnected, setCalendarConnected] = useState(isConnected());
-  const [calendars, setCalendars] = useState<{ id: string; summary: string }[]>([]);
-  const [selectedCalendar, setSelectedCalendar] = useState(localStorage.getItem('google_calendar_id') || 'primary');
-  const [calendarLoading, setCalendarLoading] = useState(false);
-  const [calendarMsg, setCalendarMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => { fetchTags(); fetchTasks(); }, []);
-
-  useEffect(() => {
-    if (calendarConnected) {
-      fetchCalendars().then((list) => {
-        setCalendars(list);
-        if (list.length === 1 && !localStorage.getItem('google_calendar_id')) {
-          setSelectedCalendar(list[0].id);
-        }
-      }).catch(() => {});
-    }
-  }, [calendarConnected]);
+  useEffect(() => { fetchTags(); }, []);
 
   const handleCreateTag = async () => {
     if (!newTagName.trim()) return;
@@ -223,61 +192,6 @@ export default function Settings() {
     });
   };
 
-  const handleConnect = async () => {
-    if (!googleClientId.trim()) {
-      setCalendarMsg({ type: 'error', text: '请先输入 Google Client ID' });
-      return;
-    }
-    setClientId(googleClientId.trim());
-    setCalendarLoading(true);
-    setCalendarMsg(null);
-    try {
-      await requestAccessToken();
-      setCalendarConnected(true);
-      setCalendarMsg({ type: 'success', text: 'Google Calendar 已连接' });
-      const list = await fetchCalendars();
-      setCalendars(list);
-      if (list.length === 1) setSelectedCalendar(list[0].id);
-    } catch (e) {
-      setCalendarMsg({ type: 'error', text: `连接失败: ${(e as Error).message}` });
-    }
-    setCalendarLoading(false);
-  };
-
-  const handleDisconnect = () => {
-    disconnect();
-    setCalendarConnected(false);
-    setCalendars([]);
-    setCalendarMsg(null);
-  };
-
-  const handleSyncToCalendar = async () => {
-    setCalendarLoading(true);
-    setCalendarMsg(null);
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const todayTasks = tasks.filter((t) => t.dueDate >= today && t.status !== 'completed');
-      let count = 0;
-      for (const task of todayTasks.slice(0, 20)) {
-        try {
-          await createCalendarEvent(selectedCalendar, {
-            title: task.title,
-            description: task.description,
-            dueDate: task.dueDate,
-            dueTime: task.dueTime,
-            estimatedMinutes: task.estimatedMinutes,
-          });
-          count++;
-        } catch { /* skip individual failures */ }
-      }
-      localStorage.setItem('google_calendar_id', selectedCalendar);
-      setCalendarMsg({ type: 'success', text: `已同步 ${count} 个任务到 Google Calendar` });
-    } catch (e) {
-      setCalendarMsg({ type: 'error', text: `同步失败: ${(e as Error).message}` });
-    }
-    setCalendarLoading(false);
-  };
-
   const handleUpdateTag = async (id: string) => {
     if (!editName.trim()) return;
     await updateTag(id, { name: editName.trim(), color: editColor });
@@ -299,7 +213,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <div className="card">
         <h3 className="text-h3">设置</h3>
         <p className="text-caption text-text-secondary mt-1">个性化配置你的 TaskTracker</p>
@@ -444,68 +358,6 @@ export default function Settings() {
         </p>
       </div>
 
-      {/* Google API 配置 + Calendar + Drive (合并卡片) */}
-      <div className="card">
-        <h3 className="text-h3 mb-3">Google 服务</h3>
-        <p className="text-caption text-text-secondary mb-4">
-          同一个 Client ID 可用于 Drive 备份和 Calendar 同步。在 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google Cloud Console</a> 创建 OAuth 2.0 Client ID
-        </p>
-        <div className="flex gap-2 mb-5">
-          <input autoComplete="off" className="input flex-1 text-small" placeholder="输入 Google Client ID"
-            value={googleClientId} onChange={(e) => setGoogleClientId(e.target.value)} />
-          <button className="btn-secondary text-small" onClick={() => { setClientId(googleClientId.trim()); setStoredClientId(googleClientId.trim()); }}>保存</button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-border">
-          {/* Calendar column */}
-          <div>
-            <h4 className="text-body font-medium mb-2 flex items-center gap-2">
-              <Calendar weight="duotone" size={18} className="text-primary" />
-              Google Calendar 同步
-            </h4>
-            <p className="text-caption text-text-secondary mb-3">
-              将任务同步到你的 Google Calendar
-            </p>
-            <div className="flex items-center gap-3 mb-3">
-              <span className={`flex items-center gap-1.5 text-small ${calendarConnected ? 'text-success' : 'text-text-secondary'}`}>
-                {calendarConnected ? <><Check weight="bold" size={14} /> 已连接</> : <><Link weight="bold" size={14} /> 未连接</>}
-              </span>
-              {calendarConnected ? (
-                <button className="btn-secondary text-small" onClick={handleDisconnect}>断开</button>
-              ) : (
-                <button className="btn-primary text-small" onClick={handleConnect} disabled={calendarLoading || !googleClientId.trim()}>
-                  {calendarLoading ? '连接中…' : '连接 Google Calendar'}
-                </button>
-              )}
-            </div>
-
-            {calendarConnected && calendars.length > 0 && (
-              <div className="space-y-3">
-                <select className="input w-full text-small" value={selectedCalendar} onChange={(e) => setSelectedCalendar(e.target.value)}>
-                  {calendars.map((c) => (
-                    <option key={c.id} value={c.id}>{c.summary}</option>
-                  ))}
-                </select>
-                <div className="flex gap-2">
-                  <button className="btn-primary flex items-center gap-1.5 text-small" onClick={handleSyncToCalendar} disabled={calendarLoading}>
-                    <ArrowsClockwise weight="bold" size={14} className={calendarLoading ? 'animate-spin' : ''} />同步未来任务
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {calendarMsg && (
-              <p className={`text-caption mt-2 ${calendarMsg.type === 'success' ? 'text-success' : 'text-danger'}`}>
-                {calendarMsg.text}
-              </p>
-            )}
-          </div>
-
-          {/* Drive column */}
-          <DriveContent />
-        </div>
-      </div>
-
       {/* Data */}
       <div className="card">
         <h3 className="text-h3 mb-3">数据管理</h3>
@@ -519,7 +371,7 @@ export default function Settings() {
           <input autoComplete="off" ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
         </div>
         <p className="text-small text-text-secondary mt-2">
-          数据存储在浏览器本地，建议定期导出备份
+          数据安全存储在云端，支持导出备份
         </p>
       </div>
 
@@ -529,125 +381,7 @@ export default function Settings() {
           TaskTracker v0.1.0 — 让每一天都离目标更近一步
         </p>
       </div>
-    </div>
-  );
-}
 
-function DriveContent() {
-  const [connected, setConnected] = useState(!!getStoredToken());
-  const [schedule, setSchedule] = useState<BackupSchedule>(getBackupSchedule());
-  const [backups, setBackups] = useState<Array<{ id: string; name: string; createdTime: string }>>([]);
-  const [uploading, setUploading] = useState(false);
-  const [statusMsg, setStatusMsg] = useState('');
-
-  const handleConnect = async () => {
-    try {
-      setStatusMsg('');
-      const cid = getStoredClientId();
-      if (!cid) { setStatusMsg('请先在 Google API 配置中保存 Client ID'); return; }
-      await authorizeGoogleDrive(cid);
-      setConnected(true);
-      setStatusMsg('已连接 Google Drive');
-    } catch (e) {
-      setStatusMsg(`连接失败: ${(e as Error).message}`);
-    }
-  };
-
-  const handleDisconnect = () => {
-    disconnectDrive();
-    setConnected(false);
-    setBackups([]);
-    setStatusMsg('已断开连接');
-  };
-
-  const handleBackup = async () => {
-    setUploading(true);
-    setStatusMsg('');
-    try {
-      const token = getStoredToken();
-      if (!token) throw new Error('未连接');
-      const { exportAllData } = await import('@/utils/export');
-      const data = await exportAllData();
-      const fileName = `tasktracker-backup-${new Date().toISOString().split('T')[0]}.json`;
-      await uploadToDrive(fileName, data, token);
-      setStatusMsg('备份成功！');
-      markBackupDone();
-    } catch (e) {
-      setStatusMsg(`备份失败: ${(e as Error).message}`);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleListBackups = async () => {
-    try {
-      const token = getStoredToken();
-      if (!token) throw new Error('未连接');
-      const list = await listBackups(token);
-      setBackups(list);
-    } catch (e) {
-      setStatusMsg(`查询失败: ${(e as Error).message}`);
-    }
-  };
-
-  return (
-    <div>
-      <h4 className="text-body font-medium mb-2 flex items-center gap-2">
-        <Cloud weight="duotone" size={18} className="text-primary" />
-        Google Drive 云备份
-      </h4>
-      <p className="text-caption text-text-secondary mb-3">
-        将数据备份到你的 Google Drive
-      </p>
-      {connected ? (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-small text-success flex items-center gap-1 flex-shrink-0">
-            <Check weight="bold" size={14} />已连接
-          </span>
-          <select
-            className="input text-small w-20"
-            value={schedule}
-            onChange={(e) => {
-              const v = e.target.value as BackupSchedule;
-              setSchedule(v);
-              setBackupSchedule(v);
-            }}
-          >
-            <option value="manual">手动</option>
-            <option value="daily">每天</option>
-            <option value="weekly">每周</option>
-          </select>
-          <button className="btn-secondary flex items-center gap-1.5 text-small" onClick={handleBackup} disabled={uploading}>
-            <HardDrive weight="bold" size={14} />{uploading ? '上传中...' : '备份'}
-          </button>
-          <button className="btn-secondary flex items-center gap-1.5 text-small" onClick={handleListBackups}>
-            <ArrowsClockwise weight="bold" size={14} />查看
-          </button>
-          <button className="btn-secondary text-small" onClick={handleDisconnect}>断开</button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3">
-          <span className="text-small text-text-secondary flex items-center gap-1.5">
-            <CloudSlash weight="duotone" size={14} />未连接
-          </span>
-          <button className="btn-primary text-small" onClick={handleConnect} disabled={!getStoredClientId()}>连接 Google Drive</button>
-        </div>
-      )}
-      {connected && backups.length > 0 && (
-        <div className="bg-surface-hover rounded-btn p-2 max-h-[160px] overflow-y-auto space-y-0.5 mt-2">
-          {backups.map((b) => (
-            <div key={b.id} className="flex items-center justify-between text-small px-2 py-1">
-              <span className="truncate">{b.name}</span>
-              <span className="text-text-secondary flex-shrink-0 ml-2">{b.createdTime?.substring(0, 10)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {statusMsg && (
-        <p className={`text-small mt-2 ${statusMsg.includes('失败') || statusMsg.includes('错') ? 'text-danger' : 'text-success'}`}>
-          {statusMsg}
-        </p>
-      )}
     </div>
   );
 }

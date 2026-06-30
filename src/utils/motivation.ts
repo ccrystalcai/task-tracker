@@ -50,26 +50,33 @@ export function getStreakMessage(streak: number): string | null {
   return null;
 }
 
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
 
 // Calculate current streak from daily summaries
 export async function calculateStreak(): Promise<number> {
-  const summaries = await db.dailySummaries.orderBy('date').reverse().toArray();
-  if (summaries.length === 0) return 0;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return 0;
+
+  const { data, error } = await supabase
+    .from('daily_summaries')
+    .select('date, completed_tasks')
+    .eq('user_id', session.user.id)
+    .order('date', { ascending: false });
+
+  if (error || !data || data.length === 0) return 0;
 
   let streak = 0;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  for (let i = 0; i < summaries.length; i++) {
+  for (let i = 0; i < data.length; i++) {
     const expected = new Date(today);
     expected.setDate(expected.getDate() - i);
     const expectedStr = expected.toISOString().split('T')[0];
 
-    if (summaries.some((s) => s.date === expectedStr && s.completedTasks > 0)) {
+    if (data.some((s) => s.date === expectedStr && s.completed_tasks > 0)) {
       streak++;
     } else if (i === 0) {
-      // Today not completed yet, check yesterday
       continue;
     } else {
       break;

@@ -126,7 +126,7 @@ export default function MagnifyingGlass() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <div className="card">
         <h3 className="text-h3 flex items-center gap-2">
           <SearchIcon size={22} className="text-primary" />
@@ -164,7 +164,7 @@ export default function MagnifyingGlass() {
           <p className="text-text-secondary">未找到匹配结果</p>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-3">
           {/* Task Results */}
           {taskResults.length > 0 && (
             <div>

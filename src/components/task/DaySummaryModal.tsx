@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTaskStore } from '@/stores/taskStore';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
 import { generateId } from '@/utils/id';
 import type { Task, Mood } from '@/db/schema';
 import Modal from '@/components/ui/Modal';
@@ -8,7 +8,6 @@ import { Star, CheckCircle, Clock, SkipForward, CameraPlus, X, CaretDown, CaretU
 import type { AppIcon } from '@/constants/moods';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import type { DailySummary } from '@/db/schema';
 import { MOOD_ICON, MOOD_LABEL, WEATHER_ICON, WEATHER_LABEL } from '@/constants/moods';
 import type { Weather } from '@/constants/moods';
 
@@ -124,6 +123,10 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
   const handleSubmit = async () => {
     setSubmitting(true);
 
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setSubmitting(false); return; }
+    const uid = session.user.id;
+
     // Auto-link before saving
     autoLinkReflections(summary);
 
@@ -132,11 +135,11 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
       const score = taskScores[task.id];
       const reflection = taskReflections[task.id];
       if (score || reflection) {
-        await db.tasks.update(task.id, {
-          score: score ?? task.score,
-          reflection: reflection ?? task.reflection,
-          updatedAt: new Date(),
-        });
+        await supabase
+          .from('tasks')
+          .update({ score: score ?? task.score, reflection: reflection ?? task.reflection, updated_at: new Date().toISOString() })
+          .eq('id', task.id)
+          .eq('user_id', uid);
       }
     }
 
@@ -144,11 +147,11 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
     for (const task of pendingTasks) {
       const reason = taskSkipReasons[task.id];
       if (reason) {
-        await db.tasks.update(task.id, {
-          reflection: reason,
-          status: 'skipped' as const,
-          updatedAt: new Date(),
-        });
+        await supabase
+          .from('tasks')
+          .update({ reflection: reason, status: 'skipped', updated_at: new Date().toISOString() })
+          .eq('id', task.id)
+          .eq('user_id', uid);
       }
     }
 
@@ -167,49 +170,68 @@ export default function DaySummaryModal({ open, onClose }: DaySummaryModalProps)
     const fullSummary = [summary, ...taskSummaryParts].filter(Boolean).join('\n\n');
 
     // Save daily summary
-    const dailySummary: DailySummary = {
-      id: generateId(),
-      date: today,
-      totalTasks: todayTasks.length,
-      completedTasks: completedTasks.length,
-      totalEstimatedMinutes: totalEstimated,
-      totalActualMinutes: totalActual,
-      summary: fullSummary,
-      images,
-      createdAt: new Date(),
-    };
-    await db.dailySummaries.put(dailySummary);
+    await supabase
+      .from('daily_summaries')
+      .insert({
+        id: generateId(),
+        user_id: uid,
+        date: today,
+        total_tasks: todayTasks.length,
+        completed_tasks: completedTasks.length,
+        total_estimated_minutes: totalEstimated,
+        total_actual_minutes: totalActual,
+        summary: fullSummary,
+        images,
+        created_at: new Date().toISOString(),
+      });
 
     // Save journal entry — merge with existing
-    const existingEntry = await db.journalEntries.where('date').equals(today).first();
+    const { data: existingEntry } = await supabase
+      .from('journal_entries')
+      .select('id, content, summary, images')
+      .eq('user_id', uid)
+      .eq('date', today)
+      .maybeSingle();
+
     const suggestions = generateSuggestions(mood, todayTasks, fullSummary);
+
     if (existingEntry) {
-      const mergedContent = existingEntry.content
-        ? `${existingEntry.content}\n\n---\n\n${fullSummary}`
+      const existingContent = (existingEntry.content as string) || '';
+      const mergedContent = existingContent
+        ? `${existingContent}\n\n---\n\n${fullSummary}`
         : fullSummary;
-      await db.journalEntries.update(existingEntry.id, {
-        mood,
-        weather,
-        content: mergedContent,
-        summary: existingEntry.summary || summary || '',
-        suggestions,
-        images: [...new Set([...(existingEntry.images ?? []), ...images])],
-        updatedAt: new Date(),
-      });
+      const existingSummary = ((existingEntry.summary as string) || summary || '');
+      const existingImages = (existingEntry.images as string[]) ?? [];
+      await supabase
+        .from('journal_entries')
+        .update({
+          mood,
+          weather,
+          content: mergedContent,
+          summary: existingSummary,
+          suggestions,
+          images: [...new Set([...existingImages, ...images])],
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingEntry.id)
+        .eq('user_id', uid);
     } else {
-      await db.journalEntries.put({
-        id: generateId(),
-        date: today,
-        mood,
-        weather,
-        content: fullSummary,
-        summary: summary || '',
-        suggestions,
-        images,
-        tags: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      await supabase
+        .from('journal_entries')
+        .insert({
+          id: generateId(),
+          user_id: uid,
+          date: today,
+          mood,
+          weather,
+          content: fullSummary,
+          summary: summary || '',
+          suggestions,
+          images,
+          tags: [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
     }
 
     // Clear draft

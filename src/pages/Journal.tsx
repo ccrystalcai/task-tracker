@@ -3,7 +3,8 @@ import { useJournalStore } from '@/stores/journalStore';
 import { useTaskStore } from '@/stores/taskStore';
 import { useClipStore } from '@/stores/clipStore';
 import { useTagStore } from '@/stores/tagStore';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
+import { mapRowsToCamelCase } from '@/lib/mapping';
 import Modal from '@/components/ui/Modal';
 import TimeFilterBar from '@/components/ui/TimeFilterBar';
 import GalleryPosterModal from '@/components/export/GalleryPosterModal';
@@ -105,7 +106,15 @@ export default function Journal() {
     fetchTasks();
     fetchClips();
     fetchTags();
-    db.dailySummaries.toArray().then(setDailySummaries);
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const { data } = await supabase
+        .from('daily_summaries')
+        .select('*')
+        .eq('user_id', session.user.id);
+      if (data) setDailySummaries(mapRowsToCamelCase<DailySummary>(data));
+    })();
   }, [fetchEntries, fetchTasks, fetchClips, fetchTags]);
 
   const summaryByDate = dailySummaries.reduce<Record<string, DailySummary>>((acc, s) => {
@@ -275,7 +284,7 @@ export default function Journal() {
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <div className="card">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -522,7 +531,7 @@ export default function Journal() {
         )}
         </>
       ) : viewMode === 'daily' ? (
-        <div className="space-y-5">
+        <div className="space-y-3">
           {/* Funnel tabs */}
           <div className="flex items-center gap-1 border-b border-border pb-0">
             <button onClick={() => setJournalFilterTab('time')}
@@ -751,7 +760,7 @@ export default function Journal() {
         </div>
       ) : (
         /* Mood view */
-        <div className="space-y-5">
+        <div className="space-y-3">
           <div className="flex items-center gap-1 border-b border-border pb-0">
             <button onClick={() => setJournalFilterTab('time')}
               className={`px-3 py-1.5 text-small rounded-t-btn transition -mb-px ${journalFilterTab === 'time' ? 'border-b-2 border-primary text-primary font-medium' : 'text-text-secondary hover:text-text-primary'}`}>

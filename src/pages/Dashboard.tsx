@@ -15,15 +15,16 @@ import EncouragementToast from '@/components/ui/EncouragementToast';
 import StreakBadge from '@/components/ui/StreakBadge';
 import AchievementToast from '@/components/ui/AchievementToast';
 import WeeklyReview from '@/components/ui/WeeklyReview';
+import CalendarPanel from '@/components/ui/CalendarPanel';
+import type { CalendarTab } from '@/components/ui/CalendarPanel';
+import FilterBar from '@/components/ui/FilterBar';
+import type { DateRange } from '@/components/ui/FilterBar';
 import { getRandomPraise, getStreakMessage, calculateStreak, checkTaskReminders, requestNotificationPermission } from '@/utils/motivation';
 import { saveTaskPrefs } from '@/utils/taskPrefs';
-import { shouldRemindBackup, markBackupDone, dismissBackupReminder, shouldAutoBackup, markAutoBackupDone } from '@/utils/backupReminder';
-import { getStoredToken } from '@/utils/googleDrive';
-import { exportAllData, downloadJSON } from '@/utils/export';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
 import { PRIORITY_LABEL, PRIORITY_COLOR, PRIORITY_BAR_COLOR, PRIORITY_ICON } from '@/constants/priorities';
 import type { Task, Priority } from '@/db/schema';
-import { Plus, Warning, Lightning, TrendUp, Target as TargetIcon, Checks, SkipForward, Star, CheckCircle, CaretLeft, CaretRight, CaretUp, CaretDown, Download, BookOpen, Paperclip, Sparkle, ArrowRight, FileText, Image, Flame, Smiley, SmileyWink, SmileyMeh, SmileySad, SmileyAngry } from '@phosphor-icons/react';
+import { Plus, Warning, Lightning, TrendUp, Target as TargetIcon, Checks, CheckCircle, CaretLeft, CaretRight, CaretUp, CaretDown, Download, BookOpen, Paperclip, Sparkle, ArrowRight, Smiley, SmileyWink, SmileyMeh, SmileySad, SmileyAngry } from '@phosphor-icons/react';
 import type { AppIcon } from '@/constants/moods';
 import { Link } from 'react-router-dom';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, subDays } from 'date-fns';
@@ -46,7 +47,7 @@ const MOOD_LABELS: Record<string, string> = {
 };
 
 export default function Dashboard() {
-  const { tasks, fetchTasks, createTask, deleteTask, toggleTask } = useTaskStore();
+  const { tasks, fetchTasks, createTask, deleteTask, toggleTask, updateTask } = useTaskStore();
   const { tags, fetchTags } = useTagStore();
   const { goals, fetchGoals } = useGoalStore();
   const { entries, fetchEntries } = useJournalStore();
@@ -62,9 +63,25 @@ export default function Dashboard() {
   const [streakChecked, setStreakChecked] = useState(false);
   const [achievementMsg, setAchievementMsg] = useState<string | null>(null);
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
-  const [quadrantFilter, setQuadrantFilter] = useState<'today' | 'next-3-days' | 'next-7-days' | 'this-week' | 'this-month' | 'next-30-days' | 'all'>('today');
+  const [quadrantFilter, setQuadrantFilter] = useState<DateRange>('today');
   const [timelineDate, setTimelineDate] = useState(today);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [viewTab, setViewTab] = useState<'list' | 'day' | 'week' | 'month'>('list');
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [selectedGoalIds, setSelectedGoalIds] = useState<string[]>([]);
+  const [selectedPriorities, setSelectedPriorities] = useState<Priority[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+
+  // Date range change: also auto-switch to matching calendar view
+  const handleDateRangeChange = (range: DateRange) => {
+    setQuadrantFilter(range);
+    if (range === 'today') setViewTab('day');
+    else if (range === 'this-week') setViewTab('week');
+    else if (range === 'this-month') setViewTab('month');
+  };
+
+  // Derive CalendarPanel tab from viewTab
+  const calendarTab: CalendarTab = viewTab === 'list' ? 'day' : viewTab;
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -78,23 +95,6 @@ export default function Dashboard() {
     fetchEntries();
     fetchClips();
     requestNotificationPermission();
-  }, []);
-
-  // Auto-backup to Google Drive
-  useEffect(() => {
-    if (!shouldAutoBackup()) return;
-    const token = getStoredToken();
-    if (!token) return;
-    (async () => {
-      try {
-        const { exportAllData } = await import('@/utils/export');
-        const { uploadToDrive } = await import('@/utils/googleDrive');
-        const data = await exportAllData();
-        const fileName = `tasktracker-auto-${new Date().toISOString().split('T')[0]}.json`;
-        await uploadToDrive(fileName, data, token);
-        markAutoBackupDone();
-      } catch { /* silent — don't bother the user for auto-backup failures */ }
-    })();
   }, []);
 
   // Streak check on load
@@ -114,16 +114,20 @@ export default function Dashboard() {
     if (now.getDay() !== 1) return;
     const weekNum = `${now.getFullYear()}-W${Math.ceil((now.getDate() + (now.getDay() + 6) % 7) / 7)}`;
     if (localStorage.getItem(`weekly-review-shown-${weekNum}`)) return;
-    db.dailySummaries.where('date').between(
-      format(subDays(now, 7), 'yyyy-MM-dd'),
-      format(subDays(now, 1), 'yyyy-MM-dd'),
-      true, true,
-    ).count().then((count) => {
-      if (count > 0) {
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const { count, error } = await supabase
+        .from('daily_summaries')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', session.user.id)
+        .gte('date', format(subDays(now, 7), 'yyyy-MM-dd'))
+        .lte('date', format(subDays(now, 1), 'yyyy-MM-dd'));
+      if (!error && count && count > 0) {
         setShowWeeklyReview(true);
         localStorage.setItem(`weekly-review-shown-${weekNum}`, '1');
       }
-    });
+    })();
   }, []);
 
   const todayTasks = useMemo(() => {
@@ -140,56 +144,83 @@ export default function Dashboard() {
     });
   }, [tasks]);
 
-  // Timeline tasks — filterable by date
-  const timelineTasks = useMemo(() => {
-    const all = tasks.filter((t) => t.dueDate === timelineDate);
-    const childSrcIds = new Set(
-      all.filter((t) => t.sourceTaskId != null).map((t) => t.sourceTaskId!),
-    );
-    return all.filter((t) => {
-      if (t.sourceTaskId == null && t.recurrenceType !== 'none') return !childSrcIds.has(t.id);
-      return true;
-    });
-  }, [tasks, timelineDate]);
+  // Filter by tags/goals/priority/status
+  const filteredTasks = useMemo(() => {
+    let result = tasks;
+    if (selectedTagIds.length > 0) {
+      result = result.filter((t) => t.tags.some((tid) => selectedTagIds.includes(tid)));
+    }
+    if (selectedGoalIds.length > 0) {
+      result = result.filter((t) => t.goalId && selectedGoalIds.includes(t.goalId));
+    }
+    if (selectedPriorities.length > 0) {
+      result = result.filter((t) => selectedPriorities.includes(t.priority));
+    }
+    if (selectedStatuses.length > 0) {
+      result = result.filter((t) => selectedStatuses.includes(t.status));
+    }
+    return result;
+  }, [tasks, selectedTagIds, selectedGoalIds, selectedPriorities, selectedStatuses]);
 
   const completed = todayTasks.filter((t) => t.status === 'completed').length;
   const total = todayTasks.length;
 
   // Quadrant view — filterable by date range
   const quadrantTasks = useMemo(() => {
-    if (quadrantFilter === 'today') return todayTasks;
-    if (quadrantFilter === 'all') return tasks.filter((t) => {
-      if (t.sourceTaskId == null && t.recurrenceType !== 'none') {
-        const childSrcIds = new Set(tasks.filter((c) => c.sourceTaskId != null && c.dueDate).map((c) => c.sourceTaskId!));
-        return !childSrcIds.has(t.id);
+    let base: Task[];
+
+    if (quadrantFilter === 'today') {
+      base = todayTasks;
+    } else if (quadrantFilter === 'all') {
+      base = tasks.filter((t) => {
+        if (t.sourceTaskId == null && t.recurrenceType !== 'none') {
+          const childSrcIds = new Set(tasks.filter((c) => c.sourceTaskId != null && c.dueDate).map((c) => c.sourceTaskId!));
+          return !childSrcIds.has(t.id);
+        }
+        return true;
+      });
+    } else {
+      const now = new Date();
+      let start = ''; let end = '';
+      if (quadrantFilter === 'next-3-days') {
+        start = format(now, 'yyyy-MM-dd');
+        end = format(addDays(now, 2), 'yyyy-MM-dd');
+      } else if (quadrantFilter === 'next-7-days') {
+        start = format(now, 'yyyy-MM-dd');
+        end = format(addDays(now, 6), 'yyyy-MM-dd');
+      } else if (quadrantFilter === 'next-30-days') {
+        start = format(now, 'yyyy-MM-dd');
+        end = format(addDays(now, 29), 'yyyy-MM-dd');
+      } else if (quadrantFilter === 'this-week') {
+        start = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+        end = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      } else if (quadrantFilter === 'this-month') {
+        start = format(startOfMonth(now), 'yyyy-MM-dd');
+        end = format(endOfMonth(now), 'yyyy-MM-dd');
       }
-      return true;
-    });
-    const now = new Date();
-    let start = ''; let end = '';
-    if (quadrantFilter === 'next-3-days') {
-      start = format(now, 'yyyy-MM-dd');
-      end = format(addDays(now, 2), 'yyyy-MM-dd');
-    } else if (quadrantFilter === 'next-7-days') {
-      start = format(now, 'yyyy-MM-dd');
-      end = format(addDays(now, 6), 'yyyy-MM-dd');
-    } else if (quadrantFilter === 'next-30-days') {
-      start = format(now, 'yyyy-MM-dd');
-      end = format(addDays(now, 29), 'yyyy-MM-dd');
-    } else if (quadrantFilter === 'this-week') {
-      start = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-      end = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-    } else if (quadrantFilter === 'this-month') {
-      start = format(startOfMonth(now), 'yyyy-MM-dd');
-      end = format(endOfMonth(now), 'yyyy-MM-dd');
+      const inRange = tasks.filter((t) => t.dueDate >= start && t.dueDate <= end);
+      const childSrcIds = new Set(inRange.filter((t) => t.sourceTaskId != null).map((t) => t.sourceTaskId!));
+      base = inRange.filter((t) => {
+        if (t.sourceTaskId == null && t.recurrenceType !== 'none') return !childSrcIds.has(t.id);
+        return true;
+      });
     }
-    const inRange = tasks.filter((t) => t.dueDate >= start && t.dueDate <= end);
-    const childSrcIds = new Set(inRange.filter((t) => t.sourceTaskId != null).map((t) => t.sourceTaskId!));
-    return inRange.filter((t) => {
-      if (t.sourceTaskId == null && t.recurrenceType !== 'none') return !childSrcIds.has(t.id);
-      return true;
-    });
-  }, [tasks, todayTasks, quadrantFilter]);
+
+    // Apply tag/goal/priority/status filters
+    if (selectedTagIds.length > 0) {
+      base = base.filter((t) => t.tags.some((tid) => selectedTagIds.includes(tid)));
+    }
+    if (selectedGoalIds.length > 0) {
+      base = base.filter((t) => t.goalId && selectedGoalIds.includes(t.goalId));
+    }
+    if (selectedPriorities.length > 0) {
+      base = base.filter((t) => selectedPriorities.includes(t.priority));
+    }
+    if (selectedStatuses.length > 0) {
+      base = base.filter((t) => selectedStatuses.includes(t.status));
+    }
+    return base;
+  }, [tasks, todayTasks, quadrantFilter, selectedTagIds, selectedGoalIds, selectedPriorities, selectedStatuses]);
   const allDone = total > 0 && completed === total;
   const goalMap = useMemo(() => new Map(goals.map((g) => [g.id, g])), [goals]);
   const clipMap = useMemo(() => new Map(
@@ -362,7 +393,7 @@ export default function Dashboard() {
   const formatTime = (mins: number) => mins >= 60 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}` : `${mins}m`;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <StreakBadge onMilestone={(_, msg) => setAchievementMsg(msg)} />
       <div className="card hover:shadow-card-hover">
         {yesterdayIncomplete.length > 0 && (
@@ -378,26 +409,6 @@ export default function Dashboard() {
             </button>
           </div>
         )}
-        {(() => {
-          const daysSince = shouldRemindBackup();
-          if (!daysSince) return null;
-          const handleBackupNow = async () => {
-            const data = await exportAllData();
-            downloadJSON(data, `tasktracker-backup-${new Date().toISOString().split('T')[0]}.json`);
-            markBackupDone();
-          };
-          return (
-            <div className="flex items-center justify-between gap-3 px-3 py-2 mb-3 rounded-btn bg-primary/5 border border-primary/15">
-              <span className="text-sm text-text-secondary">
-                {daysSince >= 999 ? '还没有备份过数据' : `已 ${daysSince} 天未备份数据`}，建议导出备份防止丢失
-              </span>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button className="text-sm font-medium text-primary hover:underline" onClick={handleBackupNow}>立即备份</button>
-                <button className="text-sm text-text-secondary hover:text-text-primary" onClick={dismissBackupReminder}>不再提醒</button>
-              </div>
-            </div>
-          );
-        })()}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="text-h3 flex items-center gap-2">
@@ -482,30 +493,84 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Four Quadrants */}
+      {/* Unified Filter Bar */}
+      <div className="card">
+        <FilterBar
+          dateRange={quadrantFilter}
+          onDateRangeChange={handleDateRangeChange}
+          allTags={tags}
+          selectedTagIds={selectedTagIds}
+          onTagsChange={setSelectedTagIds}
+          allGoals={goals}
+          selectedGoalIds={selectedGoalIds}
+          onGoalsChange={setSelectedGoalIds}
+          selectedPriorities={selectedPriorities}
+          onPrioritiesChange={setSelectedPriorities}
+          selectedStatuses={selectedStatuses}
+          onStatusesChange={setSelectedStatuses}
+        />
+      </div>
+
+      {/* View Tabs — Notion-style */}
+      <div className="flex items-center">
+        <div className="inline-flex items-center rounded-lg bg-surface-hover p-0.5 relative">
+          {/* Sliding indicator */}
+          <div
+            className="absolute top-0.5 bottom-0.5 rounded-md bg-surface shadow-sm transition-all duration-200 ease-out"
+            style={{
+              left: `${(['list','day','week','month'] as const).indexOf(viewTab) * 25}%`,
+              width: '25%',
+            }}
+          />
+          {([
+            { key: 'list', label: '四象限', dateRange: undefined as DateRange | undefined },
+            { key: 'day', label: '日', dateRange: 'today' as DateRange },
+            { key: 'week', label: '周', dateRange: 'this-week' as DateRange },
+            { key: 'month', label: '月', dateRange: 'this-month' as DateRange },
+          ] as const).map(({ key, label, dateRange }) => (
+            <button
+              key={key}
+              onClick={() => {
+                setViewTab(key);
+                if (dateRange) setQuadrantFilter(dateRange);
+              }}
+              className={`relative z-10 w-[64px] py-1.5 text-sm font-medium transition-colors duration-200 rounded-md text-center ${
+                viewTab === key
+                  ? 'text-text-primary'
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Calendar Views (日/周/月) */}
+      {viewTab !== 'list' && (
+        <div key={viewTab} className="view-enter">
+          <CalendarPanel
+            tab={calendarTab}
+            tasks={filteredTasks}
+            tags={tags}
+            selectedDate={timelineDate}
+            onSelectDate={(date) => { setTimelineDate(date); }}
+            onCreateTask={(date) => { setTimelineDate(date); setQuickPriority(null); setShowTaskForm(true); }}
+            onSelectTask={setDetailTask}
+            onUpdateTask={updateTask}
+          />
+        </div>
+      )}
+
+      {/* Four Quadrants (四象限视图) */}
+      {viewTab === 'list' && (
+      <div key="list" className="view-enter">
+      <>
       {total > 0 && (
         <>
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-h3 flex-shrink-0 mr-3">四象限视图</h3>
-          <div className="flex gap-1.5 overflow-x-auto pb-1 -mr-1">
-            {([
-              { key: 'today', label: '今日' },
-              { key: 'next-3-days', label: '近3天' },
-              { key: 'next-7-days', label: '近7天' },
-              { key: 'this-week', label: '本周' },
-              { key: 'this-month', label: '本月' },
-              { key: 'next-30-days', label: '近30天' },
-              { key: 'all', label: '全部' },
-            ] as const).map(({ key, label }) => (
-              <button key={key} onClick={() => setQuadrantFilter(key)}
-                className={`px-2.5 py-1 rounded-full text-small transition whitespace-nowrap flex-shrink-0 shadow-sm ${
-                  quadrantFilter === key ? 'bg-primary text-white' : 'bg-surface-hover text-text-secondary hover:bg-border'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
+          <h3 className="text-h3">四象限视图</h3>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
           {(Object.keys(QUADRANT_CONFIG) as Priority[]).map((key) => {
@@ -633,217 +698,9 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Today Timeline + Clock Donut */}
-      {total > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 card card-glass">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-h3">时间轴</h3>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setTimelineDate((d) => format(subDays(new Date(d + 'T12:00:00'), 1), 'yyyy-MM-dd'))}
-                  className="p-1 rounded hover:bg-surface-hover text-text-secondary">
-                  <CaretLeft weight="bold" size={18} />
-                </button>
-                <span className="text-body font-medium min-w-[100px] text-center">
-                  {format(new Date(timelineDate + 'T12:00:00'), 'M月d日 EEEE', { locale: zhCN })}
-                </span>
-                <button onClick={() => setTimelineDate((d) => format(addDays(new Date(d + 'T12:00:00'), 1), 'yyyy-MM-dd'))}
-                  className="p-1 rounded hover:bg-surface-hover text-text-secondary">
-                  <CaretRight weight="bold" size={18} />
-                </button>
-              </div>
-            </div>
-            {timelineTasks.length === 0 ? (
-              <p className="text-caption text-text-secondary text-center py-8">当天没有任务</p>
-            ) : (
-            <div className="space-y-0">
-            {timelineTasks
-              .slice()
-              .sort((a, b) => {
-                const getTime = (t: Task) => {
-                  if (t.status === 'completed' && t.completedAt) {
-                    const d = new Date(t.completedAt);
-                    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                  }
-                  return t.dueTime || '23:59';
-                };
-                return getTime(a).localeCompare(getTime(b));
-              })
-              .map((t, i, arr) => {
-                const isLast = i === arr.length - 1;
-                const isCompleted = t.status === 'completed';
-                const isSkipped = t.status === 'skipped';
-                return (
-                  <div key={t.id} className="flex gap-3">
-                    {/* Timeline track */}
-                    <div className="flex flex-col items-center flex-shrink-0">
-                      <div className={`w-3 h-3 rounded-full border-2 mt-1 ${
-                        isCompleted ? 'bg-success border-success' :
-                        isSkipped ? 'bg-warning border-warning' :
-                        'bg-surface border-primary'
-                      }`} />
-                      {!isLast && <div className="w-0.5 flex-1 min-h-[20px] bg-border" />}
-                    </div>
-                    {/* Task card */}
-                    <div className={`flex-1 pb-3 ${isCompleted ? 'opacity-60' : ''}`}>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-small text-text-secondary font-mono w-12">
-                          {isCompleted && t.completedAt
-                            ? `${String(new Date(t.completedAt).getHours()).padStart(2, '0')}:${String(new Date(t.completedAt).getMinutes()).padStart(2, '0')}`
-                            : t.dueTime || '全天'}
-                        </span>
-                        <span className={`text-body truncate min-w-0 ${isCompleted ? 'line-through text-text-secondary' : ''}`}>
-                          {t.title}
-                        </span>
-                        {isCompleted && <CheckCircle weight="duotone" size={14} className="text-success flex-shrink-0" />}
-                        {isSkipped && <SkipForward weight="bold" size={14} className="text-warning flex-shrink-0" />}
-                      </div>
-                      <div className="ml-[60px] flex items-center gap-2 text-small text-text-secondary">
-                        <span>{formatTime(t.estimatedMinutes)}</span>
-                        {t.score != null && (
-                          <span className="text-warning flex items-center gap-0.5">
-                            <Star weight="duotone" size={11} fill="#F59E0B" color="#F59E0B" />{t.score}
-                          </span>
-                        )}
-                        {t.notes && <span className="truncate max-w-[160px] sm:max-w-[200px]"><FileText weight="duotone" size={11} className="inline mr-0.5" />{t.notes.substring(0, 30)}</span>}
-                        {(t.images?.length ?? 0) > 0 && <span><Image weight="duotone" size={11} className="inline mr-0.5" />{t.images!.length}</span>}
-                        {t.priority === 'urgent-important' && <Flame weight="duotone" size={11} className="text-danger inline" />}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            )}
-          </div>
-          {/* Clock Donut */}
-          <div className="card flex items-center justify-center">
-            <ClockDonut tasks={timelineTasks} />
-          </div>
-        </div>
-      )}
-
-      {/* Estimated vs Actual Timeline */}
-      <div className="card card-glass">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-h3">预估 vs 实际</h3>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setTimelineDate((d) => format(subDays(new Date(d + 'T12:00:00'), 1), 'yyyy-MM-dd'))}
-              className="p-1 rounded hover:bg-surface-hover text-text-secondary">
-              <CaretLeft weight="bold" size={18} />
-            </button>
-            <span className="text-body font-medium min-w-[100px] text-center">
-              {format(new Date(timelineDate + 'T12:00:00'), 'M月d日 EEEE', { locale: zhCN })}
-            </span>
-            <button onClick={() => setTimelineDate((d) => format(addDays(new Date(d + 'T12:00:00'), 1), 'yyyy-MM-dd'))}
-              className="p-1 rounded hover:bg-surface-hover text-text-secondary">
-              <CaretRight weight="bold" size={18} />
-            </button>
-          </div>
-        </div>
-        <p className="text-caption text-text-secondary mb-3">上行=预估时段，下行=实际完成（竖线为计划开始时间）</p>
-        {timelineTasks.length === 0 ? (
-          <p className="text-caption text-text-secondary text-center py-8">当天没有任务</p>
-        ) : (
-        <div className="relative">
-          {/* Hour markers */}
-          <div className="flex justify-between text-small text-text-secondary mb-1 px-0">
-            {[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22].map((h) => (
-              <span key={h} className="text-[10px]">{h}:00</span>
-            ))}
-          </div>
-          {timelineTasks.filter((t) => t.dueTime).length === 0 ? (
-            <p className="text-caption text-text-secondary text-center py-4">没有带时间段的任务</p>
-          ) : (
-          <div className="space-y-1.5">
-            {timelineTasks
-              .filter((t) => t.dueTime)
-              .sort((a, b) => (a.dueTime || '').localeCompare(b.dueTime || ''))
-              .map((t) => {
-                const [eh, em] = (t.dueTime || '0:00').split(':').map(Number);
-                const estStartPct = ((eh * 60 + em) / (24 * 60)) * 100;
-                const estDurationPct = Math.max((t.estimatedMinutes / (24 * 60)) * 100, 1.5);
-                const isCompleted = t.status === 'completed';
-
-                let actualPct = 0;
-                if (isCompleted && t.completedAt) {
-                  const d = new Date(t.completedAt);
-                  actualPct = ((d.getHours() * 60 + d.getMinutes()) / (24 * 60)) * 100;
-                }
-
-                const isOver = isCompleted && actualPct > (estStartPct + estDurationPct);
-                const isEarly = isCompleted && actualPct < estStartPct;
-                const actualWidth = isCompleted ? Math.max(Math.abs(actualPct - estStartPct), 1.5) : 0;
-                const actualLeft = isCompleted ? Math.min(estStartPct, actualPct) : 0;
-
-                return (
-                  <div key={t.id}>
-                    <div className="flex items-center gap-2">
-                      <span className="w-28 text-small truncate flex-shrink-0 pr-2 text-right leading-tight">
-                        {t.title}
-                      </span>
-                      <div className="flex-1 flex flex-col gap-0.5">
-                        {/* Estimate row */}
-                        <div className="relative h-2.5 rounded-full bg-border/30">
-                          <div
-                            className="absolute h-full rounded-full bg-primary/40"
-                            style={{ left: `${estStartPct}%`, width: `${estDurationPct}%` }}
-                          />
-                          {!isCompleted && (
-                            <div
-                              className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full border border-dashed border-primary"
-                              style={{ left: `${estStartPct}%` }}
-                              title={`预定 ${t.dueTime}`}
-                            />
-                          )}
-                        </div>
-                        {/* Actual row */}
-                        <div className="relative h-2.5 rounded-full bg-border/30">
-                          {/* Scheduled marker line */}
-                          <div className="absolute top-0 bottom-0 w-px bg-primary/30" style={{ left: `${estStartPct}%` }} />
-                          {isCompleted && (
-                            <div
-                              className="absolute h-full rounded-full"
-                              style={{
-                                left: `${actualLeft}%`,
-                                width: `${actualWidth}%`,
-                                backgroundColor: isOver ? '#EF4444' : isEarly ? '#10B981' : '#10B981',
-                                opacity: 0.85,
-                              }}
-                              title={`完成于 ${new Date(t.completedAt!).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <span className="w-10 text-right text-[10px] text-text-secondary flex-shrink-0">
-                        {isCompleted && t.actualMinutes ? t.actualMinutes + 'm' : t.estimatedMinutes + 'm'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            {timelineTasks.filter((t) => !t.dueTime).length > 0 && (
-              <p className="text-caption text-text-secondary mt-2">
-                + {timelineTasks.filter((t) => !t.dueTime).length} 个全天任务未显示在时间条上
-              </p>
-            )}
-          </div>
-          )}
-          {/* Legend */}
-          <div className="flex items-center gap-4 mt-4 pt-3 border-t border-border text-small text-text-secondary">
-            <span className="flex items-center gap-1">
-              <span className="w-4 h-2 rounded-full bg-primary/40 inline-block" /> 预估时段
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-4 h-2 rounded-full bg-success inline-block" /> 按时完成
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-4 h-2 rounded-full bg-red-500 inline-block" /> 超时完成
-            </span>
-          </div>
-        </div>
-        )}
+      </>
       </div>
+      )}
 
       {/* Today Image Carousel */}
       {(() => {
@@ -1008,154 +865,3 @@ function ImageCarousel({ images }: { images: { url: string; title: string }[] })
   );
 }
 
-function ClockDonut({ tasks }: { tasks: Task[] }) {
-  const completedTasks = tasks
-    .filter((t) => t.status === 'completed')
-    .sort((a, b) => {
-      const getMinutes = (t: Task) => {
-        if (t.completedAt) {
-          const d = new Date(t.completedAt);
-          return d.getHours() * 60 + d.getMinutes();
-        }
-        if (t.dueTime) {
-          const [h, m] = t.dueTime.split(':').map(Number);
-          return h * 60 + m;
-        }
-        return 0;
-      };
-      return getMinutes(a) - getMinutes(b);
-    });
-
-  const MINUTE_SCALE = (24 * 60) / 360; // minutes per degree
-  const COLORS = ['#0D9488', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316', '#84CC16', '#14B8A6'];
-
-  if (completedTasks.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2">
-        <svg viewBox="0 0 140 140" className="w-44 h-44">
-          <circle cx="70" cy="70" r="62" fill="none" stroke="currentColor" strokeWidth="1" className="text-border" />
-          {Array.from({ length: 24 }).map((_, i) => {
-            const angle = (i * 15 - 90) * (Math.PI / 180);
-            const isHour = i % 2 === 0;
-            const inner = isHour ? 56 : 59;
-            return (
-              <line key={i} x1={70 + inner * Math.cos(angle)} y1={70 + inner * Math.sin(angle)}
-                x2={70 + 62 * Math.cos(angle)} y2={70 + 62 * Math.sin(angle)}
-                stroke="currentColor" strokeWidth={isHour ? 2 : 0.5} className="text-border" />
-            );
-          })}
-          <circle cx="70" cy="70" r="44" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-border" opacity={0.3} />
-          <text x="70" y="64" textAnchor="middle" className="fill-text-secondary" style={{ fontSize: '11px' }}>暂无</text>
-          <text x="70" y="78" textAnchor="middle" className="fill-text-secondary" style={{ fontSize: '11px' }}>完成</text>
-        </svg>
-        <p className="text-small text-text-secondary">完成任务后显示时间分布</p>
-      </div>
-    );
-  }
-
-  // Map each completed task to a slice on the 24h clock.
-  // The arc shows the work period leading UP TO the completion time.
-  const slices = completedTasks.map((t, i) => {
-    let completionAngle = 0;
-    if (t.completedAt) {
-      const d = new Date(t.completedAt);
-      const minutes = d.getHours() * 60 + d.getMinutes();
-      completionAngle = (minutes / (24 * 60)) * 360 - 90; // -90 so 0:00 is at top
-    } else if (t.dueTime) {
-      const [h, m] = t.dueTime.split(':').map(Number);
-      completionAngle = ((h * 60 + m) / (24 * 60)) * 360 - 90;
-    }
-
-    const duration = t.actualMinutes || t.estimatedMinutes;
-    const arcAngle = Math.max(duration / MINUTE_SCALE, 4); // minimum 4 degrees
-
-    return {
-      ...t,
-      color: COLORS[i % COLORS.length],
-      startAngle: completionAngle - arcAngle, // work happened before completion
-      endAngle: completionAngle,              // arc ends at completion time
-      arcAngle,
-      duration,
-    };
-  });
-
-  return (
-    <div className="flex flex-col items-center gap-2 w-full">
-      <svg viewBox="0 0 140 140" className="w-44 h-44">
-        {/* 24-hour clock ticks */}
-        {Array.from({ length: 24 }).map((_, i) => {
-          const angle = (i * 15 - 90) * (Math.PI / 180);
-          const hour = i;
-          const isHour = i % 2 === 0;
-          const inner = isHour ? 54 : 57;
-          const labelR = 48;
-          return (
-            <g key={i}>
-              <line x1={70 + inner * Math.cos(angle)} y1={70 + inner * Math.sin(angle)}
-                x2={70 + 62 * Math.cos(angle)} y2={70 + 62 * Math.sin(angle)}
-                stroke="currentColor" strokeWidth={isHour ? 1.5 : 0.5} className="text-border" />
-              {isHour && (
-                <text x={70 + labelR * Math.cos(angle)} y={70 + labelR * Math.sin(angle)}
-                  textAnchor="middle" dominantBaseline="central"
-                  className="fill-text-secondary" style={{ fontSize: '7px' }}>
-                  {hour}
-                </text>
-              )}
-            </g>
-          );
-        })}
-
-        {/* Slices positioned at actual completion times */}
-        {slices.map((s) => {
-          const r = 36;
-          const startRad = (s.startAngle * Math.PI) / 180;
-          const endRad = (s.endAngle * Math.PI) / 180;
-          const x1 = 70 + r * Math.cos(startRad);
-          const y1 = 70 + r * Math.sin(startRad);
-          const x2 = 70 + r * Math.cos(endRad);
-          const y2 = 70 + r * Math.sin(endRad);
-          const largeArc = s.arcAngle > 180 ? 1 : 0;
-
-          return (
-            <g key={s.id}>
-              <path
-                d={`M 70 70 L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`}
-                fill={s.color}
-                opacity={0.75}
-                stroke="white"
-                strokeWidth="0.5"
-              />
-              <title>
-                {s.title} · {s.duration}分钟
-                {s.completedAt ? ` · 完成于 ${new Date(s.completedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}
-              </title>
-            </g>
-          );
-        })}
-
-        {/* Center */}
-        <circle cx="70" cy="70" r="18" fill="white" stroke="currentColor" strokeWidth="1" className="text-border" />
-        <text x="70" y="66" textAnchor="middle" style={{ fontSize: '12px', fontWeight: 700, fill: '#6366F1' }}>
-          {completedTasks.length}项
-        </text>
-        <text x="70" y="79" textAnchor="middle" className="fill-text-secondary" style={{ fontSize: '9px' }}>已完成</text>
-      </svg>
-
-      {/* Legend */}
-      <div className="space-y-0.5 w-full max-h-[140px] overflow-y-auto">
-        {slices.map((s) => {
-          const timeLabel = s.completedAt
-            ? new Date(s.completedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-            : s.dueTime || '—';
-          return (
-            <div key={s.id} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
-              <span className="text-[11px] text-text-secondary truncate flex-1">{s.title}</span>
-              <span className="text-[11px] text-text-secondary font-mono">{timeLabel}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}

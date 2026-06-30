@@ -1,7 +1,14 @@
 import { create } from 'zustand';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
 import { generateId } from '@/utils/id';
+import { toSnakeCase, mapRowsToCamelCase } from '@/lib/mapping';
 import type { Clip } from '@/db/schema';
+
+async function getUserId(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+  return session.user.id;
+}
 
 interface ClipState {
   clips: Clip[];
@@ -28,14 +35,29 @@ export const useClipStore = create<ClipState>((set) => ({
 
   fetchClips: async () => {
     set({ loading: true });
-    const clips = await db.clips.orderBy('createdAt').reverse().toArray();
+    const uid = await getUserId();
+    const { data, error } = await supabase
+      .from('clips')
+      .select('*')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('fetchClips:', error.message);
+      set({ loading: false });
+      return;
+    }
+
+    const clips = mapRowsToCamelCase<Clip>(data ?? []);
     set({ clips, loading: false });
   },
 
   createClip: async (data) => {
+    const uid = await getUserId();
     const now = new Date();
     const clip: Clip = {
       id: generateId(),
+      userId: uid,
       url: data.url,
       title: data.title ?? '',
       summary: data.summary ?? '',
@@ -49,22 +71,55 @@ export const useClipStore = create<ClipState>((set) => ({
       createdAt: now,
       updatedAt: now,
     };
-    await db.clips.put(clip);
+
+    const { error } = await supabase
+      .from('clips')
+      .insert(toSnakeCase(clip as unknown as Record<string, unknown>));
+
+    if (error) {
+      console.error('createClip:', error.message);
+      throw error;
+    }
+
     set((s) => ({ clips: [clip, ...s.clips] }));
     return clip;
   },
 
   updateClip: async (id, data) => {
-    await db.clips.update(id, { ...data, updatedAt: new Date() });
+    const uid = await getUserId();
+    const updateData = { ...data, updatedAt: new Date() };
+
+    const { error } = await supabase
+      .from('clips')
+      .update(toSnakeCase(updateData as unknown as Record<string, unknown>))
+      .eq('id', id)
+      .eq('user_id', uid);
+
+    if (error) {
+      console.error('updateClip:', error.message);
+      return;
+    }
+
     set((s) => ({
       clips: s.clips.map((c) =>
-        c.id === id ? { ...c, ...data, updatedAt: new Date() } : c,
+        c.id === id ? { ...c, ...updateData } : c,
       ),
     }));
   },
 
   deleteClip: async (id) => {
-    await db.clips.delete(id);
+    const uid = await getUserId();
+    const { error } = await supabase
+      .from('clips')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', uid);
+
+    if (error) {
+      console.error('deleteClip:', error.message);
+      return;
+    }
+
     set((s) => ({ clips: s.clips.filter((c) => c.id !== id) }));
   },
 }));

@@ -143,51 +143,34 @@
 }
 
 @layer components {
+  /* Notion-template style: flat, minimal separation, no heavy shadows */
   .card {
     background-color: var(--color-surface);
-    border-radius: 16px;
-    padding: 22px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 2px 12px rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    padding: 18px 20px;
     border: 1px solid var(--color-border);
-    transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
-  }
-
-  .card:hover {
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
-    border-color: color-mix(in srgb, var(--color-primary) 20%, var(--color-border));
   }
 
   .card-flat {
     background-color: var(--color-surface);
-    border-radius: 16px;
-    padding: 22px;
+    border-radius: 8px;
+    padding: 18px 20px;
     border: 1px solid var(--color-border);
   }
 
   .card-accent {
     background-color: var(--color-surface);
-    border-radius: 16px;
-    padding: 22px;
+    border-radius: 8px;
+    padding: 18px 20px;
     border: 1px solid var(--color-border);
     border-left-width: 3px;
-    transition: box-shadow 0.25s ease, transform 0.25s ease;
-  }
-  .card-accent:hover {
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
   }
 
   .card-glass {
-    background: color-mix(in srgb, var(--color-surface) 55%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border-radius: 16px;
-    padding: 22px;
-    border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
-    transition: box-shadow 0.25s ease, transform 0.25s ease;
-  }
-  .card-glass:hover {
-    box-shadow: 0 8px 36px rgba(0, 0, 0, 0.10);
+    background-color: var(--color-surface);
+    border-radius: 8px;
+    padding: 18px 20px;
+    border: 1px solid var(--color-border);
   }
 
   .btn-primary {
@@ -326,6 +309,16 @@
   .badge-primary { background: color-mix(in srgb, var(--color-primary) 12%, transparent); color: var(--color-primary); }
   .badge-muted { background: var(--color-surface-hover); color: var(--color-text-secondary); }
 
+  /* ── Login page cosmic theme ── */
+  .login-input::placeholder { color: rgba(230,230,250,0.20); }
+  .login-input:-webkit-autofill,
+  .login-input:-webkit-autofill:hover,
+  .login-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #e6e6fa;
+    -webkit-box-shadow: 0 0 0 30px rgba(74,78,143,0.25) inset;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
   .divider {
     height: 1px;
     background: var(--color-border);
@@ -376,6 +369,17 @@
       }
     }
 
+    @keyframes loginSlideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     @keyframes slideUp {
       from {
         transform: translateY(100%);
@@ -386,5 +390,14 @@
         opacity: 1;
       }
     }
+
+    @keyframes viewFadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
   }
+}
+
+.view-enter {
+  animation: viewFadeIn 0.18s ease-out;
 }

@@ -1,5 +1,6 @@
 export interface Goal {
   id: string;
+  userId?: string;
   name: string;
   description: string;
   deadline: Date;
@@ -17,6 +18,7 @@ export type Priority =
 
 export interface Tag {
   id: string;
+  userId?: string;
   name: string;
   color: string;
   parentId: string | null;
@@ -27,6 +29,7 @@ export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly';
 
 export interface Task {
   id: string;
+  userId?: string;
   goalId: string | null;
   title: string;
   description: string;
@@ -56,6 +59,7 @@ export interface Task {
 
 export interface FocusSession {
   id: string;
+  userId?: string;
   taskId: string;
   date: string;
   startTime: Date;
@@ -65,6 +69,7 @@ export interface FocusSession {
 
 export interface TaskRecord {
   id: string;
+  userId?: string;
   taskId: string;
   date: string;
   completed: boolean;
@@ -78,6 +83,7 @@ export type Mood = 'great' | 'good' | 'okay' | 'bad' | 'terrible';
 
 export interface JournalEntry {
   id: string;
+  userId?: string;
   date: string;
   mood: Mood;
   weather: 'sunny' | 'cloudy' | 'rainy' | 'stormy' | 'snowy' | 'windy' | null;
@@ -92,6 +98,7 @@ export interface JournalEntry {
 
 export interface DailySummary {
   id: string;
+  userId?: string;
   date: string;
   totalTasks: number;
   completedTasks: number;
@@ -104,6 +111,7 @@ export interface DailySummary {
 
 export interface GoalTemplate {
   id: string;
+  userId?: string;
   name: string;
   description: string;
   data: {
@@ -118,6 +126,7 @@ export interface GoalTemplate {
 
 export interface Clip {
   id: string;
+  userId?: string;
   url: string;
   title: string;
   summary: string;

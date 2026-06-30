@@ -1,10 +1,17 @@
 import { create } from 'zustand';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
 import { generateId } from '@/utils/id';
+import { toSnakeCase, mapRowsToCamelCase } from '@/lib/mapping';
 import type { Tag } from '@/db/schema';
 
 export interface TagNode extends Tag {
   children: TagNode[];
+}
+
+async function getUserId(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+  return session.user.id;
 }
 
 interface TagState {
@@ -27,30 +34,89 @@ export const useTagStore = create<TagState>((set, get) => ({
 
   fetchTags: async () => {
     set({ loading: true });
-    const tags = await db.tags.toArray();
+    const uid = await getUserId();
+    const { data, error } = await supabase
+      .from('tags')
+      .select('*')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('fetchTags:', error.message);
+      set({ loading: false });
+      return;
+    }
+
+    const tags = mapRowsToCamelCase<Tag>(data ?? []);
     set({ tags, loading: false });
   },
 
   createTag: async (name, color, parentId = null) => {
-    const tag: Tag = { id: generateId(), name, color, parentId, createdAt: new Date() };
-    await db.tags.put(tag);
+    const uid = await getUserId();
+    const tag: Tag = {
+      id: generateId(),
+      userId: uid,
+      name,
+      color,
+      parentId,
+      createdAt: new Date(),
+    };
+
+    const { error } = await supabase
+      .from('tags')
+      .insert(toSnakeCase(tag as unknown as Record<string, unknown>));
+
+    if (error) {
+      console.error('createTag:', error.message);
+      throw error;
+    }
+
     set((s) => ({ tags: [...s.tags, tag] }));
     return tag;
   },
 
   updateTag: async (id, data) => {
-    await db.tags.update(id, data);
+    const uid = await getUserId();
+    const { error } = await supabase
+      .from('tags')
+      .update(toSnakeCase(data as unknown as Record<string, unknown>))
+      .eq('id', id)
+      .eq('user_id', uid);
+
+    if (error) {
+      console.error('updateTag:', error.message);
+      return;
+    }
+
     set((s) => ({
       tags: s.tags.map((t) => (t.id === id ? { ...t, ...data } : t)),
     }));
   },
 
   deleteTag: async (id) => {
+    const uid = await getUserId();
+
+    // Un-parent children first
     const children = get().tags.filter((t) => t.parentId === id);
     for (const child of children) {
-      await db.tags.update(child.id, { parentId: null });
+      await supabase
+        .from('tags')
+        .update({ parent_id: null })
+        .eq('id', child.id)
+        .eq('user_id', uid);
     }
-    await db.tags.delete(id);
+
+    const { error } = await supabase
+      .from('tags')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', uid);
+
+    if (error) {
+      console.error('deleteTag:', error.message);
+      return;
+    }
+
     set((s) => ({
       tags: s.tags
         .filter((t) => t.id !== id)

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useGoalStore } from '@/stores/goalStore';
 import { useTaskStore } from '@/stores/taskStore';
 import { useTagStore } from '@/stores/tagStore';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
 import { generateId } from '@/utils/id';
 import { templates } from '@/db/seeds';
 import Modal from '@/components/ui/Modal';
@@ -39,7 +39,15 @@ export default function Goals() {
     fetchGoals();
     fetchTasks();
     fetchTags();
-    db.goalTemplates.toArray().then(setCustomTemplates);
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const { data } = await supabase
+        .from('goal_templates')
+        .select('*')
+        .eq('user_id', session.user.id);
+      if (data) setCustomTemplates(data as GoalTemplate[]);
+    })();
   }, []);
 
   const goalTasks = (goalId: string) => tasks.filter((t) => t.goalId === goalId);
@@ -112,13 +120,17 @@ export default function Goals() {
     const { goal } = deleteConfirm;
     const childTasks = tasks.filter((t) => t.goalId === goal.id);
     await deleteGoal(goal.id);
-    if (deleteTasks) {
-      for (const t of childTasks) {
-        await db.tasks.delete(t.id);
-      }
-    } else {
-      for (const t of childTasks) {
-        await db.tasks.update(t.id, { goalId: null, updatedAt: new Date() });
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user.id;
+    if (uid) {
+      if (deleteTasks) {
+        for (const t of childTasks) {
+          await supabase.from('tasks').delete().eq('id', t.id).eq('user_id', uid);
+        }
+      } else {
+        for (const t of childTasks) {
+          await supabase.from('tasks').update({ goal_id: null, updated_at: new Date().toISOString() }).eq('id', t.id).eq('user_id', uid);
+        }
       }
     }
     setDeleteConfirm(null);
@@ -153,7 +165,13 @@ export default function Goals() {
       createdAt: now,
       updatedAt: now,
     };
-    await db.goalTemplates.put(tpl);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      await supabase.from('goal_templates').insert({
+        id: tpl.id, user_id: session.user.id, name: tpl.name, description: tpl.description,
+        data: tpl.data, is_built_in: false, created_at: now.toISOString(), updated_at: now.toISOString(),
+      });
+    }
     setCustomTemplates((prev) => [...prev, tpl]);
     setSaveTemplateGoal(null);
     setTemplateName('');
@@ -162,14 +180,16 @@ export default function Goals() {
 
   const handleDeleteTemplate = async (id: string) => {
     if (!confirm('确定要删除这个模板吗？')) return;
-    await db.goalTemplates.delete(id);
+    const { data: { session: s1 } } = await supabase.auth.getSession();
+    if (s1) await supabase.from('goal_templates').delete().eq('id', id).eq('user_id', s1.user.id);
     setCustomTemplates((prev) => prev.filter((t) => t.id !== id));
   };
 
   const handleSaveTemplateEdit = async () => {
     if (!editingTemplate || !editTmplName.trim()) return;
     const updated = { ...editingTemplate, name: editTmplName.trim(), description: editTmplDesc.trim(), updatedAt: new Date() };
-    await db.goalTemplates.put(updated);
+    const { data: { session: s2 } } = await supabase.auth.getSession();
+    if (s2) await supabase.from('goal_templates').update({ name: updated.name, description: updated.description, updated_at: new Date().toISOString() }).eq('id', updated.id).eq('user_id', s2.user.id);
     setCustomTemplates((prev) => prev.map((t) => t.id === updated.id ? updated : t));
     setEditingTemplate(null);
   };
@@ -211,7 +231,14 @@ export default function Goals() {
       }
     }
 
-    await db.goals.put(goal);
+    const { data: { session: s3 } } = await supabase.auth.getSession();
+    if (s3) {
+      await supabase.from('goals').insert({
+        id: goal.id, user_id: s3.user.id, name: goal.name, description: goal.description,
+        deadline: goal.deadline.toISOString(), status: goal.status, color: goal.color,
+        created_at: now.toISOString(), updated_at: now.toISOString(),
+      });
+    }
     const allTagIds = Array.from(tagMap.values());
 
     const newTasks: Task[] = template.data.tasks.map((t) => ({
@@ -223,7 +250,20 @@ export default function Goals() {
       updatedAt: now,
     }));
 
-    await db.tasks.bulkPut(newTasks);
+    if (s3) {
+      for (const t of newTasks) {
+        await supabase.from('tasks').insert({
+          id: t.id, user_id: s3.user.id, goal_id: t.goalId, title: t.title,
+          description: t.description, estimated_minutes: t.estimatedMinutes,
+          actual_minutes: 0, due_date: t.dueDate, due_time: t.dueTime,
+          reminder_enabled: t.reminderEnabled, reminder_time: t.reminderTime,
+          priority: t.priority, tags: t.tags, recurrence_type: t.recurrenceType,
+          recurrence_interval: t.recurrenceInterval, recurrence_end_date: t.recurrenceEndDate,
+          source_task_id: null, score: null, reflection: '', notes: t.notes, images: [],
+          status: 'pending', created_at: now.toISOString(), updated_at: now.toISOString(),
+        });
+      }
+    }
     await fetchGoals();
     await fetchTasks();
     await fetchTags();
@@ -232,7 +272,7 @@ export default function Goals() {
   if (loading) return <div className="max-w-2xl mx-auto p-4"><SkeletonList count={6} /></div>;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {/* Header */}
       <div className="card">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

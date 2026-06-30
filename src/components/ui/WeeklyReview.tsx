@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Modal from '@/components/ui/Modal';
-import { db } from '@/db';
+import { supabase } from '@/lib/supabase';
 import { calculateStreak } from '@/utils/motivation';
 import { CheckCircle, Clock, Flame, BookOpen, Smiley } from '@phosphor-icons/react';
 import { MOOD_ICON } from '@/constants/moods';
@@ -31,18 +31,25 @@ export default function WeeklyReview({ onClose }: { onClose: () => void }) {
     const endStr = format(weekEnd, 'yyyy-MM-dd');
     setWeekStr(`${format(weekStart, 'M.dd')} — ${format(weekEnd, 'M.dd')}`);
 
-    Promise.all([
-      db.tasks.where('dueDate').between(startStr, endStr, true, true).toArray(),
-      db.journalEntries.where('date').between(startStr, endStr, true, true).toArray(),
-      db.dailySummaries.where('date').between(startStr, endStr, true, true).toArray(),
-      calculateStreak(),
-    ]).then(([tasks, entries, summaries, s]) => {
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const uid = session.user.id;
+      const [tasksRes, entriesRes, summariesRes, s] = await Promise.all([
+        supabase.from('tasks').select('*').eq('user_id', uid).gte('due_date', startStr).lte('due_date', endStr),
+        supabase.from('journal_entries').select('*').eq('user_id', uid).gte('date', startStr).lte('date', endStr),
+        supabase.from('daily_summaries').select('*').eq('user_id', uid).gte('date', startStr).lte('date', endStr),
+        calculateStreak(),
+      ]);
+      const tasks = (tasksRes.data ?? []) as Array<Record<string, unknown>>;
+      const entries = (entriesRes.data ?? []) as Array<Record<string, unknown>>;
+      const summaries = (summariesRes.data ?? []) as Array<Record<string, unknown>>;
       const completed = tasks.filter((t) => t.status === 'completed').length;
       const actual = tasks
         .filter((t) => t.status === 'completed')
-        .reduce((sum, t) => sum + (t.actualMinutes || t.estimatedMinutes), 0);
+        .reduce((sum: number, t) => sum + ((t.actual_minutes as number) || (t.estimated_minutes as number)), 0);
 
-      const moods = entries.map((e) => e.mood).filter(Boolean);
+      const moods = entries.map((e) => e.mood as string).filter(Boolean);
       const moodCounts: Record<string, number> = {};
       moods.forEach((m) => { moodCounts[m] = (moodCounts[m] || 0) + 1; });
       let bestMood: string | null = null;
@@ -57,10 +64,10 @@ export default function WeeklyReview({ onClose }: { onClose: () => void }) {
         actualMinutes: actual,
         journalCount: entries.length,
         bestMood,
-        dailyDone: summaries.filter((s) => s.completedTasks > 0).length,
+        dailyDone: summaries.filter((s) => (s.completed_tasks as number) > 0).length,
       });
-      setStreak(Math.floor(s / 7));
-    });
+      setStreak(Math.floor((s ?? 0) / 7));
+    })();
   }, []);
 
   if (!data) return null;

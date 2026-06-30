@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { PRIORITY_LABEL, PRIORITY_COLOR } from '@/constants/priorities';
 import type { Tag, Priority } from '@/db/schema';
 import type { Goal } from '@/db/schema';
 import { parseTaskInput } from '@/utils/parseTaskInput';
 import { loadTaskPrefs } from '@/utils/taskPrefs';
-import { Calendar, Clock, Hash, Flag, Target, Sparkle, Warning } from '@phosphor-icons/react';
+import { Calendar, Clock, Hash, Flag, Target, Sparkle, Warning, Microphone, MicrophoneSlash } from '@phosphor-icons/react';
 
 const QUADRANT_LABELS: Record<Priority, { label: string; color: string }> = {
   'urgent-important': { label: PRIORITY_LABEL['urgent-important'], color: PRIORITY_COLOR['urgent-important'] },
@@ -12,6 +12,10 @@ const QUADRANT_LABELS: Record<Priority, { label: string; color: string }> = {
   'not-urgent-important': { label: PRIORITY_LABEL['not-urgent-important'], color: PRIORITY_COLOR['not-urgent-important'] },
   'not-urgent-not-important': { label: PRIORITY_LABEL['not-urgent-not-important'], color: PRIORITY_COLOR['not-urgent-not-important'] },
 };
+
+// Check browser support
+const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+const isSpeechSupported = !!SpeechRecognitionAPI;
 
 interface SmartTaskInputProps {
   tags: Tag[];
@@ -36,6 +40,8 @@ export default function SmartTaskInput({ tags, goals, onSubmit, onCancel }: Smar
   const [description, setDescription] = useState('');
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderTime, setReminderTime] = useState('09:00');
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   const parsed = useMemo(() => parseTaskInput(input), [input]);
 
@@ -69,6 +75,51 @@ export default function SmartTaskInput({ tags, goals, onSubmit, onCancel }: Smar
     });
   };
 
+  const toggleVoice = useCallback(() => {
+    if (!isSpeechSupported) {
+      alert('您的浏览器不支持语音识别，请使用 Chrome 或 Edge');
+      return;
+    }
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = 'zh-CN';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event: any) => {
+      let transcript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setInput((prev) => {
+        // Replace interim results — append final transcript after a space
+        const base = prev.trim();
+        return base ? `${base} ${transcript}` : transcript;
+      });
+    };
+
+    recognition.onerror = (event: any) => {
+      console.warn('Speech recognition error:', event.error);
+      if (event.error === 'no-speech' || event.error === 'aborted') return;
+      setListening(false);
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+    };
+
+    recognition.start();
+    setListening(true);
+    recognitionRef.current = recognition;
+  }, [listening]);
+
   return (
     <div className="space-y-4">
       {/* Input */}
@@ -77,13 +128,33 @@ export default function SmartTaskInput({ tags, goals, onSubmit, onCancel }: Smar
           <Sparkle weight="duotone" size={14} className="text-primary" />
           一句话描述任务
         </label>
-        <input
-          className="input w-full"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder='例如: 明天下午3点开会讨论Q2规划 30分钟 #工作 !重要'
-          autoFocus
-        />
+        <div className="flex gap-2">
+          <input
+            className="input w-full"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder='例如: 明天下午3点开会讨论Q2规划 30分钟 #工作 !重要'
+            autoFocus
+          />
+          {isSpeechSupported && (
+            <button
+              type="button"
+              onClick={toggleVoice}
+              className={`flex-shrink-0 w-10 h-10 rounded-btn flex items-center justify-center transition-all ${
+                listening
+                  ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30'
+                  : 'bg-surface-hover text-text-secondary hover:text-primary hover:bg-primary/10'
+              }`}
+              title={listening ? '停止录音' : '语音输入'}
+            >
+              {listening ? (
+                <MicrophoneSlash size={18} weight="fill" />
+              ) : (
+                <Microphone size={18} weight="bold" />
+              )}
+            </button>
+          )}
+        </div>
         <p className="text-caption text-text-secondary mt-1.5 leading-relaxed">
           <span className="text-primary font-medium">#标签</span> <span className="text-text-secondary">匹配已有标签</span>
           <span className="mx-1.5">·</span>
@@ -92,6 +163,12 @@ export default function SmartTaskInput({ tags, goals, onSubmit, onCancel }: Smar
           <span className="text-primary font-medium">@目标</span>
           <span className="mx-1.5">·</span>
           支持 明天/下午3点/N分钟
+          {isSpeechSupported && (
+            <>
+              <span className="mx-1.5">·</span>
+              <span className="text-primary font-medium">🎤 语音录入</span>
+            </>
+          )}
         </p>
       </div>
 
